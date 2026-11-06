@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import io
 import os
 import re
 import secrets
@@ -9,9 +10,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+import zxingcpp
 
 # Permite definir una carpeta persistente en la nube o usar la local por defecto
 DB_FOLDER = os.environ.get("DATA_DIR", "")
@@ -930,6 +933,92 @@ def obtener_pedido_para_entrega(cursor, id_pedido):
     resultado["codigo"] = f"PE-{id_pedido:06d}"
     resultado["detalles"] = [dict(fila) for fila in cursor.fetchall()]
     return resultado
+
+
+def decodificar_codigo_pedido(imagen):
+    imagen = ImageOps.exif_transpose(imagen)
+    escala = min(1, 2000 / max(imagen.size))
+    if escala < 1:
+        imagen = imagen.resize(
+            (round(imagen.width * escala), round(imagen.height * escala)),
+            Image.Resampling.LANCZOS,
+        )
+    gris = ImageOps.autocontrast(imagen.convert("L"), cutoff=1)
+    candidatos = (
+        imagen,
+        gris,
+        ImageEnhance.Sharpness(gris).enhance(2),
+        gris.point(lambda pixel: 255 if pixel >= 160 else 0),
+    )
+    for candidato in candidatos:
+        codigos = zxingcpp.read_barcodes(
+            candidato,
+            formats=zxingcpp.BarcodeFormat.Code128,
+            try_invert=True,
+        )
+        for codigo in codigos:
+            try:
+                id_pedido = obtener_id_pedido_codigo(codigo.text)
+            except HTTPException:
+                continue
+            return f"PE-{id_pedido:06d}"
+    return None
+
+
+@app.post("/api/personal/pedidos/leer-codigo")
+async def leer_codigo_pedido(
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "vendedor")
+    finally:
+        conexion.close()
+
+    tipo_contenido = request.headers.get("content-type", "").split(";", 1)[0]
+    if tipo_contenido not in ("image/jpeg", "image/png"):
+        raise HTTPException(
+            status_code=415,
+            detail="Envía una captura de cámara en formato JPEG o PNG.",
+        )
+    if request.headers.get("content-length", "").isdigit() and int(
+        request.headers["content-length"]
+    ) > 5_000_000:
+        raise HTTPException(status_code=413, detail="La imagen excede el tamaño permitido.")
+
+    contenido = bytearray()
+    async for fragmento in request.stream():
+        contenido.extend(fragmento)
+        if len(contenido) > 5_000_000:
+            raise HTTPException(
+                status_code=413,
+                detail="La imagen excede el tamaño permitido.",
+            )
+    if not contenido:
+        raise HTTPException(status_code=400, detail="La captura está vacía.")
+
+    try:
+        with Image.open(io.BytesIO(contenido)) as imagen:
+            if imagen.width * imagen.height > 12_000_000:
+                raise HTTPException(
+                    status_code=413,
+                    detail="La resolución de la imagen excede el límite permitido.",
+                )
+            imagen.load()
+            codigo = decodificar_codigo_pedido(imagen)
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="No se pudo leer la captura.")
+
+    if codigo:
+        return {"codigo": codigo}
+
+    raise HTTPException(
+        status_code=422,
+        detail="No se detectó un código de pedido de PizzaExpress. "
+        "Asegúrate de enfocar el código de barras completo.",
+    )
 
 
 @app.get("/api/personal/pedidos/codigo/{codigo}")

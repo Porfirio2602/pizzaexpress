@@ -3,3 +3,7 @@ uvicorn[standard]
 pydantic
 requests
 flet
+flet-camera==1.0.5
+flet-permission-handler==1.0.5
+Pillow
+zxing-cpp
