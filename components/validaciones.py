@@ -22,3 +22,21 @@ def correo_valido(valor):
 
 def telefono_valido(valor):
     return bool(re.fullmatch(r"[0-9]{10}", valor.strip()))
+
+
+def requisitos_contrasena_pendientes(valor):
+    pendientes = []
+    if len(valor) < 8:
+        pendientes.append("al menos 8 caracteres")
+    if not any(caracter.isupper() for caracter in valor):
+        pendientes.append("una mayúscula")
+    if not any(caracter.islower() for caracter in valor):
+        pendientes.append("una minúscula")
+    if not any(caracter.isdigit() for caracter in valor):
+        pendientes.append("un número")
+    if not any(
+        not caracter.isalnum() and not caracter.isspace()
+        for caracter in valor
+    ):
+        pendientes.append("un símbolo")
+    return pendientes
