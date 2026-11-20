@@ -1,12 +1,16 @@
 import hashlib
 import hmac
+import smtplib
 import io
 import os
 import re
 import secrets
 import sqlite3
+import string
+import ssl
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Literal
 
@@ -14,6 +18,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+from components.validaciones import correo_valido, requisitos_contrasena_pendientes
 import zxingcpp
 
 # Permite definir una carpeta persistente en la nube o usar la local por defecto
@@ -30,13 +35,27 @@ class UsuarioLogin(BaseModel):
     contrasena: str
 
 
+class SolicitudRestablecimiento(BaseModel):
+    correo: str = Field(min_length=3, max_length=254)
+
+
+class VerificarCodigoRestablecimiento(BaseModel):
+    correo: str = Field(min_length=3, max_length=254)
+    codigo: str = Field(min_length=6, max_length=6, pattern=r"^[A-Za-z]{6}$")
+
+
+class ConfirmarRestablecimiento(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    nueva_contrasena: str = Field(min_length=8, max_length=256)
+
+
 class UsuarioRegistro(BaseModel):
     nombre: str
     primer_apellido: str
     segundo_apellido: str
     telefono: str
     correo: str
-    contrasena: str
+    contrasena: str = Field(min_length=8, max_length=256)
 
 
 class ArticuloPedido(BaseModel):
@@ -67,7 +86,7 @@ class NuevoVendedor(BaseModel):
     nombre: str = Field(min_length=1, max_length=200)
     correo: str = Field(min_length=3, max_length=254)
     telefono: str = Field(min_length=10, max_length=20)
-    contrasena: str = Field(min_length=12, max_length=256)
+    contrasena: str = Field(min_length=8, max_length=256)
 
 
 class EstadoVendedor(BaseModel):
@@ -94,6 +113,8 @@ class NuevoPedidoVendedor(BaseModel):
 GERENTE_EMAIL = os.environ.get("GERENTE_EMAIL", "sajusa1@gmail.com").strip().lower()
 GERENTE_NOMBRE = os.environ.get("GERENTE_NOMBRE", "Juan Alcudia Lopez").strip()
 GERENTE_PASSWORD = os.environ.get("GERENTE_PASSWORD", "AdminPassword123!")
+PASSWORD_RESET_DURATION = timedelta(minutes=3)
+MAX_RESET_CODE_ATTEMPTS = 5
 PBKDF2_ITERACIONES = 600_000
 PRODUCTOS_VENTA = {
     1: ("Pizza Pepperoni", 180.00),
@@ -242,6 +263,28 @@ def inicializar_base_datos():
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS restablecimientos_contrasena (
+                token_hash TEXT PRIMARY KEY,
+                id_cliente INTEGER NOT NULL,
+                expira_en TEXT NOT NULL,
+                FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS codigos_restablecimiento (
+                id_cliente INTEGER PRIMARY KEY,
+                codigo_hash TEXT NOT NULL,
+                token_hash TEXT,
+                expira_en TEXT NOT NULL,
+                intentos INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
+            )
+            """
+        )
         if GERENTE_PASSWORD:
             validar_contrasena_personal(GERENTE_PASSWORD)
             cursor.execute(
@@ -313,18 +356,23 @@ def crear_sesion(cursor, id_cliente):
 
 
 def validar_contrasena_personal(contrasena):
-    if (
-        len(contrasena) < 12
-        or not any(caracter.isupper() for caracter in contrasena)
-        or not any(caracter.islower() for caracter in contrasena)
-        or not any(caracter.isdigit() for caracter in contrasena)
-        or not any(not caracter.isalnum() for caracter in contrasena)
-    ):
+    if requisitos_contrasena_pendientes(contrasena):
         raise HTTPException(
             status_code=422,
             detail=(
-                "La contraseña debe tener 12 caracteres e incluir "
-                "mayúsculas, minúsculas, números y símbolos."
+                "La contraseña debe tener al menos 8 caracteres e incluir "
+                "una mayúscula, una minúscula, un número y un símbolo."
+            ),
+        )
+
+
+def validar_contrasena_cliente(contrasena):
+    if requisitos_contrasena_pendientes(contrasena):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "La contraseña debe tener al menos 8 caracteres e incluir "
+                "una mayúscula, una minúscula, un número y un símbolo."
             ),
         )
 
@@ -354,6 +402,73 @@ def verificar_password(contrasena, password_hash):
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(derivado.hex(), hash_hex)
+
+
+def configuracion_smtp():
+    host = os.environ.get("SMTP_HOST", "").strip()
+    usuario = os.environ.get("SMTP_USER", "").strip()
+    contrasena = os.environ.get("SMTP_PASSWORD", "")
+    remitente = os.environ.get("SMTP_FROM", usuario).strip()
+    try:
+        puerto = int(os.environ.get("SMTP_PORT", "587"))
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="La configuración de correo del servidor no es válida.",
+        ) from error
+
+    if not all((host, usuario, contrasena, remitente)) or not 1 <= puerto <= 65535:
+        raise HTTPException(
+            status_code=503,
+            detail="El envío de correo no está configurado en el servidor.",
+        )
+    return host, puerto, usuario, contrasena, remitente
+
+
+def enviar_correo_restablecimiento(correo, codigo):
+    host, puerto, usuario, contrasena, remitente = configuracion_smtp()
+
+    mensaje = EmailMessage()
+    mensaje["Subject"] = "Código para restablecer tu contraseña de PizzaExpress"
+    mensaje["From"] = remitente
+    mensaje["To"] = correo
+    mensaje.set_content(
+        "Recibimos una solicitud para restablecer tu contraseña de PizzaExpress.\n"
+        f"Tu código de confirmación es: {codigo}\n"
+        "Escribe este código en la aplicación antes de 3 minutos.\n"
+        "Si no solicitaste este cambio, ignora este mensaje."
+    )
+    mensaje.add_alternative(
+        "<p>Recibimos una solicitud para restablecer tu contraseña de "
+        "PizzaExpress.</p>"
+        f'<p>Tu código de confirmación es: <strong>{codigo}</strong></p>'
+        "<p>Escríbelo en la aplicación antes de 3 minutos. Si no solicitaste este cambio, "
+        "ignora este mensaje.</p>",
+        subtype="html",
+    )
+
+    try:
+        if puerto == 465:
+            with smtplib.SMTP_SSL(
+                host,
+                puerto,
+                timeout=15,
+                context=ssl.create_default_context(),
+            ) as servidor:
+                servidor.login(usuario, contrasena)
+                servidor.send_message(mensaje)
+        else:
+            with smtplib.SMTP(host, puerto, timeout=15) as servidor:
+                servidor.ehlo()
+                servidor.starttls(context=ssl.create_default_context())
+                servidor.ehlo()
+                servidor.login(usuario, contrasena)
+                servidor.send_message(mensaje)
+    except (OSError, smtplib.SMTPException) as error:
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo enviar el correo. Inténtalo más tarde.",
+        ) from error
 
 
 def crear_sesion_personal(cursor, id_personal):
@@ -456,6 +571,7 @@ app.add_middleware(
 
 @app.post("/api/registro")
 def registrar_usuario(user: UsuarioRegistro):
+    validar_contrasena_cliente(user.contrasena)
     conexion = conectar_db()
     cursor = conexion.cursor()
     try:
@@ -535,6 +651,215 @@ def login_usuario(user: UsuarioLogin):
             "apellido": resultado["primer_apellido"],
             "token": token,
         }
+    finally:
+        conexion.close()
+
+
+@app.post("/api/password-reset/request")
+def solicitar_restablecimiento_contrasena(
+    solicitud: SolicitudRestablecimiento,
+):
+    correo = solicitud.correo.strip().lower()
+    if not correo_valido(correo):
+        raise HTTPException(status_code=422, detail="Ingresa un correo válido.")
+    configuracion_smtp()
+
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute(
+            "SELECT id_cliente FROM clientes WHERE LOWER(TRIM(correo)) = ?",
+            (correo,),
+        )
+        cliente = cursor.fetchone()
+        if cliente:
+            codigo = "".join(
+                secrets.choice(string.ascii_uppercase) for _ in range(6)
+            )
+            codigo_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
+            expira_en = (
+                datetime.now(timezone.utc) + PASSWORD_RESET_DURATION
+            ).isoformat()
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute(
+                """
+                INSERT INTO codigos_restablecimiento
+                    (id_cliente, codigo_hash, token_hash, expira_en, intentos)
+                VALUES (?, ?, NULL, ?, 0)
+                ON CONFLICT(id_cliente) DO UPDATE SET
+                    codigo_hash = excluded.codigo_hash,
+                    token_hash = NULL,
+                    expira_en = excluded.expira_en,
+                    intentos = 0
+                """,
+                (cliente["id_cliente"], codigo_hash, expira_en),
+            )
+            enviar_correo_restablecimiento(correo, codigo)
+            conexion.commit()
+        return {
+            "mensaje": (
+                "Si existe una cuenta con ese correo, recibirás un código "
+                "de confirmación."
+            )
+        }
+    except HTTPException:
+        conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
+@app.post("/api/password-reset/verify")
+def verificar_codigo_restablecimiento(
+    verificacion: VerificarCodigoRestablecimiento,
+):
+    correo = verificacion.correo.strip().lower()
+    codigo_hash = hashlib.sha256(
+        verificacion.codigo.strip().upper().encode("utf-8")
+    ).hexdigest()
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute("BEGIN IMMEDIATE")
+        cursor.execute(
+            """
+            SELECT r.id_cliente, r.codigo_hash, r.token_hash,
+                   r.expira_en, r.intentos
+            FROM codigos_restablecimiento r
+            JOIN clientes c ON c.id_cliente = r.id_cliente
+            WHERE LOWER(TRIM(c.correo)) = ?
+            """,
+            (correo,),
+        )
+        restablecimiento = cursor.fetchone()
+        if (
+            not restablecimiento
+            or restablecimiento["token_hash"]
+            or datetime.fromisoformat(restablecimiento["expira_en"])
+            <= datetime.now(timezone.utc)
+        ):
+            if restablecimiento:
+                cursor.execute(
+                    "DELETE FROM codigos_restablecimiento WHERE id_cliente = ?",
+                    (restablecimiento["id_cliente"],),
+                )
+                conexion.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="El código no es válido o expiró. Solicita uno nuevo.",
+            )
+
+        codigo_valido = hmac.compare_digest(
+            restablecimiento["codigo_hash"],
+            codigo_hash,
+        )
+        if not codigo_valido:
+            intentos = restablecimiento["intentos"] + 1
+            if intentos >= MAX_RESET_CODE_ATTEMPTS:
+                cursor.execute(
+                    "DELETE FROM codigos_restablecimiento WHERE id_cliente = ?",
+                    (restablecimiento["id_cliente"],),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE codigos_restablecimiento
+                    SET intentos = ?
+                    WHERE id_cliente = ?
+                    """,
+                    (intentos, restablecimiento["id_cliente"]),
+                )
+            conexion.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="El código no es válido o expiró. Solicita uno nuevo.",
+            )
+
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        cursor.execute(
+            """
+            UPDATE codigos_restablecimiento
+            SET token_hash = ?, expira_en = ?
+            WHERE id_cliente = ? AND token_hash IS NULL
+            """,
+            (
+                token_hash,
+                (
+                    datetime.now(timezone.utc) + PASSWORD_RESET_DURATION
+                ).isoformat(),
+                restablecimiento["id_cliente"],
+            ),
+        )
+        if cursor.rowcount != 1:
+            conexion.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail="El código no es válido o expiró. Solicita uno nuevo.",
+            )
+        conexion.commit()
+        return {"token": token}
+    except HTTPException:
+        if conexion.in_transaction:
+            conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
+@app.post("/api/password-reset/confirm")
+def confirmar_restablecimiento_contrasena(
+    confirmacion: ConfirmarRestablecimiento,
+):
+    validar_contrasena_cliente(confirmacion.nueva_contrasena)
+    token_hash = hashlib.sha256(confirmacion.token.encode("utf-8")).hexdigest()
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute("BEGIN IMMEDIATE")
+        cursor.execute(
+            """
+            SELECT id_cliente, expira_en
+            FROM codigos_restablecimiento
+            WHERE token_hash = ?
+            """,
+            (token_hash,),
+        )
+        restablecimiento = cursor.fetchone()
+        if not restablecimiento or datetime.fromisoformat(
+            restablecimiento["expira_en"]
+        ) <= datetime.now(timezone.utc):
+            cursor.execute(
+                "DELETE FROM codigos_restablecimiento WHERE token_hash = ?",
+                (token_hash,),
+            )
+            conexion.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="La verificación expiró o ya fue utilizada. Solicita un código nuevo.",
+            )
+
+        cursor.execute(
+            "UPDATE clientes SET contrasena = ? WHERE id_cliente = ?",
+            (
+                confirmacion.nueva_contrasena.strip(),
+                restablecimiento["id_cliente"],
+            ),
+        )
+        cursor.execute(
+            "DELETE FROM codigos_restablecimiento WHERE id_cliente = ?",
+            (restablecimiento["id_cliente"],),
+        )
+        cursor.execute(
+            "DELETE FROM sesiones WHERE id_cliente = ?",
+            (restablecimiento["id_cliente"],),
+        )
+        conexion.commit()
+        return {"mensaje": "Tu contraseña se restableció correctamente."}
+    except HTTPException:
+        if conexion.in_transaction:
+            conexion.rollback()
+        raise
     finally:
         conexion.close()
 
