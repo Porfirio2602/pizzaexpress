@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import smtplib
 import io
+import logging
 import os
 import re
 import secrets
@@ -20,6 +21,8 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from components.validaciones import correo_valido, requisitos_contrasena_pendientes
 import zxingcpp
+
+logger = logging.getLogger("pizzaexpress.smtp")
 
 # Permite definir una carpeta persistente en la nube o usar la local por defecto
 DB_FOLDER = os.environ.get("DATA_DIR", "")
@@ -465,6 +468,12 @@ def enviar_correo_restablecimiento(correo, codigo):
                 servidor.login(usuario, contrasena)
                 servidor.send_message(mensaje)
     except (OSError, smtplib.SMTPException) as error:
+        logger.exception(
+            "SMTP delivery failed: host=%s port=%s sender=%s",
+            host,
+            puerto,
+            remitente,
+        )
         raise HTTPException(
             status_code=503,
             detail="No se pudo enviar el correo. Inténtalo más tarde.",
