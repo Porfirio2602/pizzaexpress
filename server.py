@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import smtplib
 import io
+import json
 import logging
 import os
 import re
@@ -14,6 +15,8 @@ from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Literal
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
@@ -429,6 +432,61 @@ def configuracion_smtp():
 
 
 def enviar_correo_restablecimiento(correo, codigo):
+    resend_api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    if resend_api_key:
+        resend_from = os.environ.get(
+            "RESEND_FROM",
+            "PizzaExpress <onboarding@resend.dev>",
+        ).strip()
+        payload = json.dumps(
+            {
+                "from": resend_from,
+                "to": [correo],
+                "subject": "Código para restablecer tu contraseña de PizzaExpress",
+                "text": (
+                    "Recibimos una solicitud para restablecer tu contraseña "
+                    "de PizzaExpress.\n"
+                    f"Tu código de confirmación es: {codigo}\n"
+                    "Escribe este código en la aplicación antes de 3 minutos."
+                ),
+            }
+        ).encode("utf-8")
+        solicitud_http = urllib_request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(
+                solicitud_http,
+                timeout=15,
+            ) as respuesta_http:
+                if not 200 <= respuesta_http.status < 300:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="No se pudo enviar el correo. Inténtalo más tarde.",
+                    )
+            return
+        except urllib_error.HTTPError as error:
+            logger.exception(
+                "Resend delivery failed with HTTP status %s",
+                error.code,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="No se pudo enviar el correo. Inténtalo más tarde.",
+            ) from error
+        except urllib_error.URLError as error:
+            logger.exception("Resend delivery failed due to network error")
+            raise HTTPException(
+                status_code=503,
+                detail="No se pudo enviar el correo. Inténtalo más tarde.",
+            ) from error
+
     host, puerto, usuario, contrasena, remitente = configuracion_smtp()
 
     mensaje = EmailMessage()
