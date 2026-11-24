@@ -3,6 +3,29 @@ import requests
 import flet as ft
 from config import BASE_URL
 
+INGREDIENTES_POR_PIZZA = {
+    "Pizza Pepperoni": ["Masa", "Salsa de tomate", "Queso mozzarella", "Pepperoni"],
+    "Pizza Hawaiana": ["Masa", "Salsa de tomate", "Queso mozzarella", "Jamón", "Piña"],
+    "Pizza Carnívora": [
+        "Masa",
+        "Salsa de tomate",
+        "Queso mozzarella",
+        "Pepperoni",
+        "Chorizo",
+        "Carne molida",
+        "Tocino",
+    ],
+    "Pizza Mexicana": [
+        "Masa",
+        "Salsa de tomate",
+        "Queso mozzarella",
+        "Chorizo",
+        "Jalapeño",
+        "Cebolla",
+        "Pimiento",
+    ],
+}
+
 
 class CocineroView(ft.Column):
     def __init__(self, personal, on_cerrar_sesion, es_movil=False):
@@ -59,6 +82,12 @@ class CocineroView(ft.Column):
                         ],
                         spacing=2,
                         expand=True,
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.WARNING_AMBER_ROUNDED,
+                        icon_color="#9A541D",
+                        tooltip="Reportar ingrediente faltante",
+                        on_click=self.abrir_dialogo_falta_ingrediente,
                     ),
                     ft.IconButton(
                         icon=ft.Icons.REFRESH,
@@ -266,6 +295,17 @@ class CocineroView(ft.Column):
             for item in pedido.get("detalles", [])
         ]
 
+        btn_detalles = ft.OutlinedButton(
+            "Detalles del pedido",
+            icon=ft.Icons.LIST_ALT,
+            height=46,
+            style=ft.ButtonStyle(
+                color="#6A0404",
+                side=ft.BorderSide(1, "#6A0404"),
+            ),
+            on_click=lambda e, ped=pedido: self.mostrar_detalles_pedido(ped),
+        )
+
         btn_listo = ft.FilledButton(
             "Marcar pedido listo",
             icon=ft.Icons.DONE_ALL,
@@ -334,10 +374,182 @@ class CocineroView(ft.Column):
                     ),
                     ft.Divider(height=1, color="#F1E5DE"),
                     *items_ui,
-                    btn_listo,
+                    ft.Row(
+                        [btn_detalles, btn_listo],
+                        wrap=True,
+                        spacing=10,
+                    ),
                 ],
             ),
         )
+
+    def mostrar_detalles_pedido(self, pedido):
+        pagina = self._obtener_pagina()
+        if pagina is None:
+            return
+        controles = []
+        ingredientes_totales = []
+        for item in pedido.get("detalles", []):
+            nombre = item["nombre_pizza"]
+            ings = item.get("ingredientes") or INGREDIENTES_POR_PIZZA.get(
+                nombre, []
+            )
+            if not ings:
+                for clave, lista_ing in INGREDIENTES_POR_PIZZA.items():
+                    if clave.casefold() in nombre.casefold():
+                        for ing in lista_ing:
+                            if ing not in ings:
+                                ings.append(ing)
+            for ing in ings:
+                if ing not in ingredientes_totales:
+                    ingredientes_totales.append(ing)
+            controles.append(
+                ft.Container(
+                    padding=10,
+                    bgcolor="#FFF8F2",
+                    border_radius=10,
+                    content=ft.Column(
+                        spacing=4,
+                        controls=[
+                            ft.Text(
+                                f"{item['cantidad']}x {nombre}",
+                                weight=ft.FontWeight.BOLD,
+                                color="#6A0404",
+                                size=14,
+                            ),
+                            ft.Text(
+                                "Ingredientes: "
+                                + (
+                                    ", ".join(ings)
+                                    if ings
+                                    else "Consultar receta base"
+                                ),
+                                size=13,
+                                color="#3F302B",
+                            ),
+                        ],
+                    ),
+                )
+            )
+
+        def cerrar_dialogo(_=None):
+            try:
+                pagina.pop_dialog()
+            except RuntimeError:
+                pass
+
+        dialogo = ft.AlertDialog(
+            modal=True,
+            bgcolor=ft.Colors.WHITE,
+            title=ft.Text(
+                f"Detalles del pedido {pedido['codigo']}", color="#6A0404"
+            ),
+            content=ft.Container(
+                width=340 if self.es_movil else 440,
+                content=ft.Column(
+                    tight=True,
+                    scroll=ft.ScrollMode.AUTO,
+                    spacing=10,
+                    controls=[
+                        *controles,
+                        ft.Divider(height=1),
+                        ft.Text(
+                            "Insumos requeridos en estación:",
+                            weight=ft.FontWeight.BOLD,
+                            size=13,
+                            color="#3F302B",
+                        ),
+                        ft.Text(
+                            ", ".join(ingredientes_totales)
+                            if ingredientes_totales
+                            else "Sin listado",
+                            size=13,
+                            color="#54423B",
+                        ),
+                    ],
+                ),
+            ),
+            actions=[
+                ft.FilledButton(
+                    "Cerrar",
+                    bgcolor="#6A0404",
+                    color=ft.Colors.WHITE,
+                    on_click=cerrar_dialogo,
+                )
+            ],
+        )
+        try:
+            pagina.show_dialog(dialogo)
+        except RuntimeError as error:
+            if "Dialog is already opened" in str(error):
+                pagina.pop_dialog()
+                pagina.show_dialog(dialogo)
+
+    def abrir_dialogo_falta_ingrediente(self, e=None):
+        pagina = self._obtener_pagina()
+        if pagina is None:
+            return
+        txt_ing = ft.TextField(
+            label="Ingrediente agotado",
+            hint_text="Ej. Queso mozzarella, Piña",
+        )
+        txt_nota = ft.TextField(
+            label="Nota para vendedor/gerencia",
+            hint_text="Ej. Queda para 2 pizzas más",
+        )
+
+        def cerrar_dialogo(_=None):
+            try:
+                pagina.pop_dialog()
+            except RuntimeError:
+                pass
+
+        async def enviar_reporte(_):
+            ing = (txt_ing.value or "").strip()
+            if not ing:
+                return
+            try:
+                await asyncio.to_thread(
+                    requests.post,
+                    f"{BASE_URL}/api/cocina/ingredientes/faltantes",
+                    json={
+                        "ingrediente": ing,
+                        "nota": (txt_nota.value or "").strip(),
+                    },
+                    headers=self.token_headers,
+                    timeout=15,
+                )
+            except requests.RequestException:
+                return
+            cerrar_dialogo()
+            self.lbl_estado.value = (
+                f"Falta de '{ing}' reportada a vendedor y gerencia."
+            )
+            self.actualizar_ui()
+
+        dialogo = ft.AlertDialog(
+            modal=True,
+            bgcolor=ft.Colors.WHITE,
+            title=ft.Text("Reportar ingrediente faltante", color="#6A0404"),
+            content=ft.Column(
+                tight=True, spacing=10, controls=[txt_ing, txt_nota]
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=cerrar_dialogo),
+                ft.FilledButton(
+                    "Avisar",
+                    bgcolor="#6A0404",
+                    color=ft.Colors.WHITE,
+                    on_click=lambda e: pagina.run_task(enviar_reporte, e),
+                ),
+            ],
+        )
+        try:
+            pagina.show_dialog(dialogo)
+        except RuntimeError as error:
+            if "Dialog is already opened" in str(error):
+                pagina.pop_dialog()
+                pagina.show_dialog(dialogo)
 
     def marcar_listo(self, id_pedido, boton):
         pagina = self._obtener_pagina()

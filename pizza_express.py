@@ -19,7 +19,33 @@ def verificar_credenciales(correo, contrasena):
 def inicializar_base_datos():
     conexion = sqlite3.connect("pizza_express.db")
     cursor = conexion.cursor()
+    cursor.execute(
+            """
+        CREATE TABLE IF NOT EXISTS reportes_ingredientes (
+            id_reporte INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_cocinero INTEGER NOT NULL,
+            nombre_cocinero TEXT NOT NULL,
+            ingrediente TEXT NOT NULL,
+            nota TEXT,
+            resuelto INTEGER NOT NULL DEFAULT 0,
+            creado_en TEXT NOT NULL,
+            FOREIGN KEY (id_cocinero) REFERENCES personal(id_personal)
+        )
+        """
+        )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS disponibilidad_pizzas (
+            nombre_pizza TEXT PRIMARY KEY,
+            disponible INTEGER NOT NULL DEFAULT 1,
+            actualizado_por TEXT,
+            actualizado_en TEXT
+        )
+        """
+        )
+        
     
+        
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
             id_cliente INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +90,7 @@ def inicializar_base_datos():
             FOREIGN KEY (id_pedido) REFERENCES pedidos(id_pedido)
         )
     """)
+    
     
     conexion.commit()
     conexion.close()

@@ -136,6 +136,33 @@ PRODUCTOS_VENTA = {
     10: ("Pan de Ajo con Queso", 55.00),
 }
 
+TAMANOS_PIZZA = {
+    "individual": {"nombre": "Individual", "porciones": "4 rebanadas", "max_combinaciones": 2, "precio": 110.0},
+    "chica": {"nombre": "Chica", "porciones": "4 piezas", "max_combinaciones": 2, "precio": 140.0},
+    "mediana": {"nombre": "Mediana", "porciones": "6 piezas", "max_combinaciones": 2, "precio": 185.0},
+    "grande": {"nombre": "Grande", "porciones": "8 piezas", "max_combinaciones": 2, "precio": 230.0},
+    "jumbo": {"nombre": "Jumbo", "porciones": "12 rebanadas", "max_combinaciones": 4, "precio": 310.0},
+    "mega": {"nombre": "Mega", "porciones": "24 piezas", "max_combinaciones": 4, "precio": 520.0},
+    "cuadripizza_24": {"nombre": "Cuadripizza (24 reb.)", "porciones": "24 rebanadas", "max_combinaciones": 4, "precio": 540.0},
+    "cuadripizza_32": {"nombre": "Cuadripizza (32 reb.)", "porciones": "32 rebanadas", "max_combinaciones": 4, "precio": 640.0},
+}
+
+INGREDIENTES_POR_PIZZA = {
+    "Pizza Pepperoni": ["Masa", "Salsa de tomate", "Queso mozzarella", "Pepperoni"],
+    "Pizza Hawaiana": ["Masa", "Salsa de tomate", "Queso mozzarella", "Jamón", "Piña"],
+    "Pizza Carnívora": ["Masa", "Salsa de tomate", "Queso mozzarella", "Pepperoni", "Chorizo", "Carne molida", "Tocino"],
+    "Pizza Mexicana": ["Masa", "Salsa de tomate", "Queso mozzarella", "Chorizo", "Jalapeño", "Cebolla", "Pimiento"],
+}
+
+
+class ReporteIngredienteFaltante(BaseModel):
+    ingrediente: str = Field(min_length=1, max_length=120)
+    nota: str = Field(default="", max_length=300)
+
+
+class DisponibilidadPizza(BaseModel):
+    nombre_pizza: str = Field(min_length=1, max_length=150)
+    disponible: bool
 
 def conectar_db():
     conexion = sqlite3.connect(DATABASE_PATH)
@@ -398,6 +425,41 @@ def inicializar_base_datos():
                 )
                 """,
                 (GERENTE_EMAIL,),
+            )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reportes_ingredientes (
+                id_reporte INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_cocinero INTEGER NOT NULL,
+                nombre_cocinero TEXT NOT NULL,
+                ingrediente TEXT NOT NULL,
+                nota TEXT,
+                resuelto INTEGER NOT NULL DEFAULT 0,
+                creado_en TEXT NOT NULL,
+                FOREIGN KEY (id_cocinero) REFERENCES personal(id_personal)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS disponibilidad_pizzas (
+                nombre_pizza TEXT PRIMARY KEY,
+                disponible INTEGER NOT NULL DEFAULT 1,
+                actualizado_por TEXT,
+                actualizado_en TEXT
+            )
+            """
+        )
+        ahora_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        for nombre_pizza in INGREDIENTES_POR_PIZZA:
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO disponibilidad_pizzas
+                    (nombre_pizza, disponible, actualizado_por, actualizado_en)
+                VALUES (?, 1, 'Sistema', ?)
+                """,
+                (nombre_pizza, ahora_iso),
             )
         conexion.commit()
     finally:
@@ -1382,6 +1444,146 @@ def listar_pedidos_cocina(
     finally:
         conexion.close()
 
+@app.post("/api/cocina/ingredientes/faltantes", status_code=201)
+def reportar_ingrediente_faltante(
+    reporte: ReporteIngredienteFaltante,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cocinero = autenticar_personal(cursor, authorization, "cocinero")
+        ahora_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cursor.execute(
+            """
+            INSERT INTO reportes_ingredientes
+                (id_cocinero, nombre_cocinero, ingrediente, nota, resuelto, creado_en)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (
+                cocinero["id_personal"],
+                cocinero["nombre"],
+                reporte.ingrediente.strip(),
+                reporte.nota.strip(),
+                ahora_iso,
+            ),
+        )
+        conexion.commit()
+        return {
+            "id_reporte": cursor.lastrowid,
+            "mensaje": "Reporte enviado a vendedor y gerencia.",
+        }
+    finally:
+        conexion.close()
+
+
+@app.get("/api/personal/ingredientes/faltantes")
+def listar_reportes_ingredientes(
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("gerente", "vendedor", "cocinero"):
+            raise HTTPException(status_code=403, detail="No autorizado.")
+        cursor.execute(
+            """
+            SELECT id_reporte, nombre_cocinero, ingrediente, nota, resuelto, creado_en
+            FROM reportes_ingredientes
+            ORDER BY resuelto ASC, id_reporte DESC
+            LIMIT 100
+            """
+        )
+        return {"reportes": [dict(fila) for fila in cursor.fetchall()]}
+    finally:
+        conexion.close()
+
+
+@app.get("/api/pizzas/disponibilidad")
+def obtener_disponibilidad_pizzas():
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT nombre_pizza, disponible, actualizado_por, actualizado_en
+            FROM disponibilidad_pizzas
+            ORDER BY nombre_pizza ASC
+            """
+        )
+        return {
+            "pizzas": [
+                {
+                    "nombre_pizza": fila["nombre_pizza"],
+                    "disponible": bool(fila["disponible"]),
+                    "ingredientes": INGREDIENTES_POR_PIZZA.get(
+                        fila["nombre_pizza"], []
+                    ),
+                    "actualizado_por": fila["actualizado_por"],
+                    "actualizado_en": fila["actualizado_en"],
+                }
+                for fila in cursor.fetchall()
+            ]
+        }
+    finally:
+        conexion.close()
+
+
+@app.patch("/api/personal/pizzas/disponibilidad")
+def actualizar_disponibilidad_pizza(
+    cambio: DisponibilidadPizza,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("gerente", "vendedor"):
+            raise HTTPException(
+                status_code=403,
+                detail="Solo vendedor o gerencia pueden cambiar la disponibilidad en el menú.",
+            )
+        ahora_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cursor.execute(
+            """
+            INSERT INTO disponibilidad_pizzas
+                (nombre_pizza, disponible, actualizado_por, actualizado_en)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(nombre_pizza) DO UPDATE SET
+                disponible = excluded.disponible,
+                actualizado_por = excluded.actualizado_por,
+                actualizado_en = excluded.actualizado_en
+            """,
+            (
+                cambio.nombre_pizza.strip(),
+                int(cambio.disponible),
+                f"{personal['nombre']} ({personal['rol']})",
+                ahora_iso,
+            ),
+        )
+        if cambio.disponible:
+            ingredientes_pizza = [
+                ing.casefold()
+                for ing in INGREDIENTES_POR_PIZZA.get(cambio.nombre_pizza.strip(), [])
+            ]
+            for ing in ingredientes_pizza:
+                cursor.execute(
+                    """
+                    UPDATE reportes_ingredientes
+                    SET resuelto = 1
+                    WHERE LOWER(ingrediente) = ? AND resuelto = 0
+                    """,
+                    (ing,),
+                )
+        conexion.commit()
+        return {
+            "nombre_pizza": cambio.nombre_pizza.strip(),
+            "disponible": cambio.disponible,
+            "mensaje": "Disponibilidad actualizada en todas las presentaciones.",
+        }
+    finally:
+        conexion.close()
 
 @app.patch("/api/cocina/pedidos/{id_pedido}/listo")
 def marcar_pedido_listo_cocina(
