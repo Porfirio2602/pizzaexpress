@@ -387,12 +387,15 @@ class CocineroView(ft.Column):
         pagina = self._obtener_pagina()
         if pagina is None:
             return
-        controles = []
+        tarjetas_items = []
         ingredientes_totales = []
-        for item in pedido.get("detalles", []):
+        detalles = pedido.get("detalles", [])
+
+        for item in detalles:
             nombre = item["nombre_pizza"]
-            ings = item.get("ingredientes") or INGREDIENTES_POR_PIZZA.get(
-                nombre, []
+            ings = list(
+                item.get("ingredientes")
+                or INGREDIENTES_POR_PIZZA.get(nombre, [])
             )
             if not ings:
                 for clave, lista_ing in INGREDIENTES_POR_PIZZA.items():
@@ -403,29 +406,118 @@ class CocineroView(ft.Column):
             for ing in ings:
                 if ing not in ingredientes_totales:
                     ingredientes_totales.append(ing)
-            controles.append(
+
+            chips_item = [
                 ft.Container(
-                    padding=10,
-                    bgcolor="#FFF8F2",
+                    padding=ft.Padding(left=8, top=4, right=8, bottom=4),
+                    bgcolor=ft.Colors.WHITE,
+                    border=ft.Border.all(1, "#E7C8B8"),
                     border_radius=10,
+                    content=ft.Text(
+                        ing,
+                        size=12,
+                        weight=ft.FontWeight.W_500,
+                        color="#3F302B",
+                    ),
+                )
+                for ing in ings
+            ]
+
+            tarjetas_items.append(
+                ft.Container(
+                    padding=12,
+                    bgcolor="#FFF8F2",
+                    border=ft.Border.all(1, "#F0D8CA"),
+                    border_radius=14,
                     content=ft.Column(
-                        spacing=4,
+                        tight=True,
+                        spacing=8,
                         controls=[
-                            ft.Text(
-                                f"{item['cantidad']}x {nombre}",
-                                weight=ft.FontWeight.BOLD,
-                                color="#6A0404",
-                                size=14,
+                            ft.Row(
+                                [
+                                    ft.Container(
+                                        padding=ft.Padding(
+                                            left=8, top=3, right=8, bottom=3
+                                        ),
+                                        bgcolor="#6A0404",
+                                        border_radius=8,
+                                        content=ft.Text(
+                                            f"{item['cantidad']}×",
+                                            size=12,
+                                            weight=ft.FontWeight.BOLD,
+                                            color=ft.Colors.WHITE,
+                                        ),
+                                    ),
+                                    ft.Text(
+                                        nombre,
+                                        size=15,
+                                        weight=ft.FontWeight.BOLD,
+                                        color="#3F302B",
+                                        expand=True,
+                                    ),
+                                ],
+                                spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
-                            ft.Text(
-                                "Ingredientes: "
-                                + (
-                                    ", ".join(ings)
-                                    if ings
-                                    else "Consultar receta base"
-                                ),
-                                size=13,
-                                color="#3F302B",
+                            ft.Row(chips_item, wrap=True, spacing=6, run_spacing=6)
+                            if chips_item
+                            else ft.Text(
+                                "Consultar receta base",
+                                size=12,
+                                color="#806B63",
+                            ),
+                        ],
+                    ),
+                )
+            )
+
+        controles_contenido = list(tarjetas_items)
+        if len(detalles) > 1 and ingredientes_totales:
+            chips_totales = [
+                ft.Container(
+                    padding=ft.Padding(left=9, top=4, right=9, bottom=4),
+                    bgcolor="#FCE8E6",
+                    border_radius=12,
+                    content=ft.Text(
+                        ing,
+                        size=12,
+                        weight=ft.FontWeight.BOLD,
+                        color="#6A0404",
+                    ),
+                )
+                for ing in ingredientes_totales
+            ]
+            controles_contenido.append(
+                ft.Container(
+                    padding=12,
+                    bgcolor="#FFFDFB",
+                    border=ft.Border.all(1, "#E7C8B8"),
+                    border_radius=14,
+                    content=ft.Column(
+                        tight=True,
+                        spacing=8,
+                        controls=[
+                            ft.Row(
+                                [
+                                    ft.Icon(
+                                        ft.Icons.INVENTORY_2_OUTLINED,
+                                        size=16,
+                                        color="#6A0404",
+                                    ),
+                                    ft.Text(
+                                        "Total de insumos del pedido",
+                                        size=13,
+                                        weight=ft.FontWeight.BOLD,
+                                        color="#3F302B",
+                                    ),
+                                ],
+                                spacing=6,
+                            ),
+                            ft.Row(
+                                chips_totales,
+                                wrap=True,
+                                spacing=6,
+                                run_spacing=6,
                             ),
                         ],
                     ),
@@ -441,42 +533,72 @@ class CocineroView(ft.Column):
         dialogo = ft.AlertDialog(
             modal=True,
             bgcolor=ft.Colors.WHITE,
-            title=ft.Text(
-                f"Detalles del pedido {pedido['codigo']}", color="#6A0404"
+            shape=ft.RoundedRectangleBorder(radius=22),
+            title=ft.Row(
+                [
+                    ft.Container(
+                        width=38,
+                        height=38,
+                        alignment=ft.Alignment.CENTER,
+                        bgcolor="#FCE8E6",
+                        border_radius=12,
+                        content=ft.Icon(
+                            ft.Icons.RESTAURANT_MENU,
+                            color="#6A0404",
+                            size=20,
+                        ),
+                    ),
+                    ft.Column(
+                        [
+                            ft.Text(
+                                f"Detalles · {pedido['codigo']}",
+                                size=18,
+                                weight=ft.FontWeight.BOLD,
+                                color="#6A0404",
+                            ),
+                            ft.Text(
+                                f"{pedido['nombre_contacto']} · {pedido['tipo_servicio']}",
+                                size=12,
+                                color="#806B63",
+                            ),
+                        ],
+                        spacing=1,
+                        expand=True,
+                    ),
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             content=ft.Container(
-                width=340 if self.es_movil else 440,
+                width=320 if self.es_movil else 430,
                 content=ft.Column(
                     tight=True,
                     scroll=ft.ScrollMode.AUTO,
                     spacing=10,
-                    controls=[
-                        *controles,
-                        ft.Divider(height=1),
-                        ft.Text(
-                            "Insumos requeridos en estación:",
-                            weight=ft.FontWeight.BOLD,
-                            size=13,
-                            color="#3F302B",
-                        ),
-                        ft.Text(
-                            ", ".join(ingredientes_totales)
-                            if ingredientes_totales
-                            else "Sin listado",
-                            size=13,
-                            color="#54423B",
-                        ),
-                    ],
+                    controls=controles_contenido,
                 ),
             ),
             actions=[
+                ft.OutlinedButton(
+                    "Reportar faltante",
+                    icon=ft.Icons.WARNING_AMBER_ROUNDED,
+                    style=ft.ButtonStyle(
+                        color="#9A541D",
+                        side=ft.BorderSide(1, "#9A541D"),
+                    ),
+                    on_click=lambda e: (
+                        cerrar_dialogo(),
+                        self.abrir_dialogo_falta_ingrediente(e),
+                    ),
+                ),
                 ft.FilledButton(
                     "Cerrar",
                     bgcolor="#6A0404",
                     color=ft.Colors.WHITE,
                     on_click=cerrar_dialogo,
-                )
+                ),
             ],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         try:
             pagina.show_dialog(dialogo)

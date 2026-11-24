@@ -1,346 +1,403 @@
 import flet as ft
+from components.pizzas_combinadas import (
+    abrir_modal_combinar_pizza,
+    obtener_mapa_disponibilidad,
+    pizza_disponible_en_todas_versiones,
+)
 
-class MenuView(ft.Container):
-    def __init__(self, on_cart_change, categoria_inicial="Pizzas", es_movil=False):
+
+class MenuView(ft.Column):
+    def __init__(self, on_cart_change=None, es_movil=False, mostrar_combinador=True):
         super().__init__()
         self.on_cart_change = on_cart_change
+        self.es_movil = es_movil
+        self.mostrar_combinador = mostrar_combinador
         self.expand = True
-        self.padding = 15
-        self.bgcolor = "#F9F9F9"  # Fondo gris suave para resaltar las tarjetas
+        self.spacing = 10
 
-        # Catálogo ampliado organizado por categorías (Pizzas, Bebidas, Extras)
-        self.productos = [
-            # Pizzas
-            {"id": 1, "categoria": "Pizzas", "nombre": "Pizza Pepperoni", "descripcion": "Mozzarella dorada, pepperoni abundante y salsa de tomate de la casa.", "precio": 180.00, "imagen": "https://images.unsplash.com/photo-1628840042765-356cda07504e?w=300"},
-            {"id": 2, "categoria": "Pizzas", "nombre": "Pizza Hawaiana", "descripcion": "Jamón jugoso, piña dulce y una generosa capa de queso fundido.", "precio": 170.00, "imagen": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=300"},
-            {"id": 3, "categoria": "Pizzas", "nombre": "Pizza Carnívora", "descripcion": "Pepperoni, tocino crujiente, jamón y salchicha italiana en cada bocado.", "precio": 210.00, "imagen": "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=300"},
-            {"id": 4, "categoria": "Pizzas", "nombre": "Pizza Mexicana", "descripcion": "Chorizo doradito, jalapeño, cebolla morada y frijoles refritos.", "precio": 195.00, "imagen": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300"},
-            
-            # Bebidas
-            {"id": 5, "categoria": "Bebidas", "nombre": "Coca-Cola 2L", "descripcion": "Bien fría y burbujeante, ideal para compartir en la mesa.", "precio": 45.00, "imagen": "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=300"},
-            {"id": 6, "categoria": "Bebidas", "nombre": "Agua Fresa Natural 1L", "descripcion": "Agua fresca de fresa, natural y preparada el mismo día.", "precio": 35.00, "imagen": "https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=300"},
-            {"id": 7, "categoria": "Bebidas", "nombre": "Te Manzanita 600ml", "descripcion": "Refrescante sabor a manzana en presentación individual.", "precio": 28.00, "imagen": "https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=300"},
-
-            # Extras
-            {"id": 8, "categoria": "Extras", "nombre": "Papas a la Francesa", "descripcion": "Papas doradas y crujientes, con aderezo especial de la casa.", "precio": 65.00, "imagen": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=300"},
-            {"id": 9, "categoria": "Extras", "nombre": "Alitas BBQ (6 pzas)", "descripcion": "Alitas jugosas cubiertas con BBQ ahumada y un toque picante.", "precio": 95.00, "imagen": "https://images.unsplash.com/photo-1527477396000-e27163b481c2?w=300"},
-            {"id": 10, "categoria": "Extras", "nombre": "Pan de Ajo con Queso", "descripcion": "Baguette tostado con mantequilla de ajo y queso gratinado.", "precio": 55.00, "imagen": "https://images.unsplash.com/photo-1573140247632-f8fd74997d5c?w=300"},
-        ]
-
-        # Estructura de cantidades para el carrito
-        self.estado_carrito = {p["id"]: {"nombre": p["nombre"], "precio": p["precio"], "cantidad": 0} for p in self.productos}
+        self.categoria_seleccionada = "Todas"
         self.productos_activos = set()
+        self.mapa_disponibilidad = obtener_mapa_disponibilidad()
 
-        if es_movil:
-            self.lista_productos_column = ft.Column(
-                spacing=15,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True,
-            )
-        else:
-            self.lista_productos_column = ft.ResponsiveRow(
-                spacing=15,
-                run_spacing=15,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True,
-            )
-
-        # Selector visual de categorías dentro del menú
-        self.categoria_actual = categoria_inicial
-        self.tabs_categoria = ft.Row(
-            [
-                self.crear_boton_categoria("Pizzas"),
-                self.crear_boton_categoria("Bebidas"),
-                self.crear_boton_categoria("Extras"),
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=10,
-            wrap=True,
-        )
-
-        self.construir_catalogo()
-
-        self.content = ft.Column([
-            ft.Text(
-                "CONOCE NUESTRO MENÚ",
-                size=24,
-                weight=ft.FontWeight.BOLD,
-                color="#6A0404",
-            ),
-            ft.Text("Elige tus favoritas y armemos tu pedido", size=15, color=ft.Colors.GREY_700),
-            ft.Divider(height=5, color=ft.Colors.TRANSPARENT),
-            self.tabs_categoria,
-            ft.Divider(height=5, color=ft.Colors.TRANSPARENT),
-            self.lista_productos_column
-        ], expand=True)
-
-    def crear_boton_categoria(self, nombre_cat):
-        activo = self.categoria_actual == nombre_cat
-        iconos = {
-            "Pizzas": ft.Icons.LOCAL_PIZZA_ROUNDED,
-            "Bebidas": ft.Icons.LOCAL_DRINK_ROUNDED,
-            "Extras": ft.Icons.FASTFOOD_ROUNDED,
-        }
-        return ft.Container(
-            content=ft.Row(
-                [
-                    ft.Icon(
-                        iconos[nombre_cat],
-                        size=19,
-                        color=ft.Colors.WHITE if activo else "#6A0404",
-                    ),
-                    ft.Text(
-                        nombre_cat,
-                        weight=ft.FontWeight.BOLD if activo else ft.FontWeight.W_500,
-                        color=ft.Colors.WHITE if activo else "#6A0404",
-                        size=16,
-                    ),
-                ],
-                spacing=8,
-                tight=True,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=ft.Padding(left=17, top=10, right=17, bottom=10),
-            bgcolor="#6A0404" if activo else ft.Colors.WHITE,
-            border_radius=14,
-            border=ft.Border.all(1, "#6A0404" if activo else ft.Colors.WHITE),
-            shadow=(
-                ft.BoxShadow(
-                    blur_radius=12,
-                    spread_radius=1,
-                    color=ft.Colors.with_opacity(0.2, "#6A0404"),
-                    offset=ft.Offset(0, 3),
-                )
-                if activo
-                else None
-            ),
-            on_click=lambda e: self.cambiar_categoria(nombre_cat)
-        )
-
-    def cambiar_categoria(self, nueva_cat):
-        self.categoria_actual = nueva_cat
-        # Actualizar estilo de pestañas
-        self.tabs_categoria.controls = [
-            self.crear_boton_categoria("Pizzas"),
-            self.crear_boton_categoria("Bebidas"),
-            self.crear_boton_categoria("Extras"),
+        self.productos = [
+            {
+                "id": 1,
+                "nombre": "Pizza Pepperoni",
+                "precio": 180.00,
+                "categoria": "Pizzas",
+                "descripcion": "Queso mozzarella fundido y pepperoni dorado.",
+                "imagen": "pizza_pepperoni.png",
+            },
+            {
+                "id": 2,
+                "nombre": "Pizza Hawaiana",
+                "precio": 170.00,
+                "categoria": "Pizzas",
+                "descripcion": "Jamón ahumado, piña dulce y queso mozzarella.",
+                "imagen": "pizza_hawaiana.png",
+            },
+            {
+                "id": 3,
+                "nombre": "Pizza Carnívora",
+                "precio": 210.00,
+                "categoria": "Pizzas",
+                "descripcion": "Pepperoni, chorizo, carne molida y tocino.",
+                "imagen": "pizza_carnivora.png",
+            },
+            {
+                "id": 4,
+                "nombre": "Pizza Mexicana",
+                "precio": 195.00,
+                "categoria": "Pizzas",
+                "descripcion": "Chorizo, jalapeño, cebolla y pimiento morrón.",
+                "imagen": "pizza_mexicana.png",
+            },
+            {
+                "id": 5,
+                "nombre": "Coca-Cola 2L",
+                "precio": 45.00,
+                "categoria": "Bebidas",
+                "descripcion": "Refresco bien frío de 2 litros.",
+                "imagen": "coca_cola.png",
+            },
+            {
+                "id": 6,
+                "nombre": "Agua Fresa Natural 1L",
+                "precio": 35.00,
+                "categoria": "Bebidas",
+                "descripcion": "Agua fresca artesanal de fresa.",
+                "imagen": "agua_fresa.png",
+            },
+            {
+                "id": 7,
+                "nombre": "Te Manzanita 600ml",
+                "precio": 28.00,
+                "categoria": "Bebidas",
+                "descripcion": "Bebida refrescante sabor manzana.",
+                "imagen": "manzanita.png",
+            },
+            {
+                "id": 8,
+                "nombre": "Papas a la Francesa",
+                "precio": 65.00,
+                "categoria": "Complementos",
+                "descripcion": "Porción crujiente recién hecha.",
+                "imagen": "papas.png",
+            },
+            {
+                "id": 9,
+                "nombre": "Alitas BBQ (6 pzas)",
+                "precio": 95.00,
+                "categoria": "Complementos",
+                "descripcion": "Bañadas en salsa BBQ artesanal.",
+                "imagen": "alitas.png",
+            },
+            {
+                "id": 10,
+                "nombre": "Pan de Ajo con Queso",
+                "precio": 55.00,
+                "categoria": "Complementos",
+                "descripcion": "Crujiente pan con mantequilla de ajo y queso.",
+                "imagen": "pan_ajo.png",
+            },
         ]
-        self.construir_catalogo()
-        self.actualizar_si_montado(self)
 
-    @staticmethod
-    def actualizar_si_montado(control):
+        self.estado_carrito = {
+            prod["id"]: {"cantidad": 0, "precio": prod["precio"]}
+            for prod in self.productos
+        }
+
+        self.row_categorias = ft.Row(spacing=8, scroll=ft.ScrollMode.AUTO)
+        self.btn_combinar = ft.FilledButton(
+            "Combinar pizza (precio fijo)",
+            icon=ft.Icons.LOCAL_PIZZA,
+            bgcolor="#6A0404",
+            color=ft.Colors.WHITE,
+            height=40,
+            visible=self.mostrar_combinador,
+            on_click=self.abrir_combinador_usuario,
+        )
+        self.lista_productos_column = ft.Column(spacing=10)
+
+        self.construir_barra_categorias()
+        self.construir_catalogo()
+
+        self.controls = [
+            ft.Container(
+                padding=ft.Padding(left=6, top=4, right=6, bottom=2),
+                content=ft.Row(
+                    [
+                        ft.Container(content=self.row_categorias, expand=True),
+                        self.btn_combinar,
+                    ],
+                    wrap=True,
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+            ),
+            ft.Container(
+                expand=True,
+                padding=ft.Padding(left=6, top=2, right=6, bottom=10),
+                content=ft.Column(
+                    scroll=ft.ScrollMode.AUTO,
+                    expand=True,
+                    controls=[self.lista_productos_column],
+                ),
+            ),
+        ]
+
+    def did_mount(self):
+        self.refrescar_disponibilidad()
+
+    def refrescar_disponibilidad(self):
+        self.mapa_disponibilidad = obtener_mapa_disponibilidad()
+        self.construir_catalogo()
+        self.actualizar_si_montado(self.lista_productos_column)
+
+    def actualizar_si_montado(self, control):
         try:
             if control.page is not None:
                 control.update()
         except RuntimeError:
-            return
+            pass
 
-    def construir_catalogo(self):
-        controles = []
-        # Filtrar productos según la categoría seleccionada
-        productos_filtrados = [p for p in self.productos if p["categoria"] == self.categoria_actual]
-
-        for prod in productos_filtrados:
-            prod_id = prod["id"]
-            cantidad = self.estado_carrito[prod_id]["cantidad"]
-
-            txt_cantidad = ft.Text(
-                value=str(cantidad) if cantidad > 0 else "",
-                width=30,
-                text_align=ft.TextAlign.CENTER,
-                size=15,
-                weight=ft.FontWeight.BOLD,
-                color="#6A0404",
-                visible=prod_id in self.productos_activos,
-            )
-            controles_cantidad = ft.Container(
-                padding=3,
-                bgcolor=ft.Colors.WHITE,
-                border=ft.Border.all(1, "#E6C7CC"),
-                border_radius=12,
-                visible=prod_id in self.productos_activos,
-                content=ft.Row(
-                    spacing=2,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-            )
-            boton_agregar = ft.IconButton(
-                icon=ft.Icons.ADD,
-                icon_color=ft.Colors.WHITE,
-                icon_size=20,
-                bgcolor="#6A0404",
-                width=40,
-                height=40,
-                padding=8,
-                style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=12),
-                    overlay_color=ft.Colors.with_opacity(0.12, "#6A0404"),
-                ),
-                visual_density=ft.VisualDensity.COMPACT,
-                size_constraints=ft.BoxConstraints(
-                    min_width=40,
-                    max_width=40,
-                    min_height=40,
-                    max_height=40,
-                ),
-                visible=prod_id not in self.productos_activos,
-            )
-            boton_menos = ft.IconButton(
-                icon=ft.Icons.REMOVE,
-                icon_color=ft.Colors.WHITE,
-                icon_size=19,
-                width=34,
-                height=34,
-                padding=5,
-                bgcolor="#6A0404",
-                style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
-                    overlay_color=ft.Colors.with_opacity(0.12, "#6A0404"),
-                ),
-                visual_density=ft.VisualDensity.COMPACT,
-                size_constraints=ft.BoxConstraints(
-                    min_width=34,
-                    max_width=34,
-                    min_height=34,
-                    max_height=34,
-                ),
-            )
-            boton_mas = ft.IconButton(
-                icon=ft.Icons.ADD,
-                icon_color=ft.Colors.WHITE,
-                icon_size=19,
-                width=34,
-                height=34,
-                padding=5,
-                bgcolor="#6A0404",
-                style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
-                    overlay_color=ft.Colors.with_opacity(0.12, "#6A0404"),
-                ),
-                visual_density=ft.VisualDensity.COMPACT,
-                size_constraints=ft.BoxConstraints(
-                    min_width=34,
-                    max_width=34,
-                    min_height=34,
-                    max_height=34,
-                ),
-            )
-            boton_agregar.on_click = (
-                lambda e, pid=prod_id, campo=txt_cantidad, fila=controles_cantidad, add=boton_agregar:
-                self.incrementar_cantidad(pid, campo, fila, add)
-            )
-            boton_menos.on_click = (
-                lambda e, pid=prod_id, campo=txt_cantidad, fila=controles_cantidad, add=boton_agregar:
-                self.decrementar_cantidad(pid, campo, fila, add)
-            )
-            boton_mas.on_click = boton_agregar.on_click
-            controles_cantidad.content.controls = [
-                boton_menos,
+    def construir_barra_categorias(self):
+        categorias = ["Todas", "Pizzas", "Bebidas", "Complementos"]
+        self.row_categorias.controls.clear()
+        for cat in categorias:
+            activa = self.categoria_seleccionada == cat
+            self.row_categorias.controls.append(
                 ft.Container(
-                    content=txt_cantidad,
-                    width=34,
-                    height=34,
-                    alignment=ft.Alignment.CENTER,
-                ),
-                boton_mas,
-            ]
-
-            tarjeta = ft.Container(
-                col={
-                    ft.ResponsiveRowBreakpoint.MD: 6,
-                    ft.ResponsiveRowBreakpoint.XL: 3,
-                },
-                content=ft.Row([
-                    ft.Container(
-                        content=ft.Image(
-                            src=prod["imagen"],
-                            width=90,
-                            height=90,
-                            fit="cover"
-                        ),
-                        border_radius=10,
-                        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-                        width=90,
-                        height=90
+                    padding=ft.Padding(left=14, top=8, right=14, bottom=8),
+                    bgcolor="#6A0404" if activa else "#FFF8F2",
+                    border_radius=20,
+                    border=ft.Border.all(
+                        1, "#6A0404" if activa else "#E7C8B8"
                     ),
-                    ft.VerticalDivider(width=10, color=ft.Colors.TRANSPARENT),
-                    ft.Column([
-                        ft.Text(prod["nombre"], weight=ft.FontWeight.BOLD, size=18, color="#1A1A1A"),
-                        ft.Text(
-                            prod["descripcion"],
-                            size=14,
-                            color=ft.Colors.GREY_600,
-                            max_lines=2,
-                            overflow=ft.TextOverflow.ELLIPSIS,
-                        ),
-                        ft.Row([
-                            ft.Text(
-                                f"${prod['precio']:.2f}",
-                                weight=ft.FontWeight.W_900,
-                                size=17,
-                                color="#6A0404",
-                            ),
-                            ft.Row([
-                                boton_agregar,
-                                controles_cantidad,
-                            ], spacing=6, alignment=ft.MainAxisAlignment.END, tight=True)
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, expand=True)
-                    ], expand=True, spacing=4)
-                ], alignment=ft.MainAxisAlignment.START, expand=True),
-                bgcolor=ft.Colors.WHITE,
-                padding=12,
-                border_radius=14,
-                shadow=ft.BoxShadow(
-                    spread_radius=1,
-                    blur_radius=6,
-                    color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
-                    offset=ft.Offset(0, 3)
+                    ink=True,
+                    on_click=lambda e, c=cat: self.seleccionar_categoria(c),
+                    content=ft.Text(
+                        cat,
+                        size=13,
+                        weight=ft.FontWeight.BOLD,
+                        color=ft.Colors.WHITE if activa else "#6A0404",
+                    ),
                 )
             )
-            controles.append(tarjeta)
 
-        self.lista_productos_column.controls = controles
-
-    def actualizar_controles_cantidad(self, producto_id, campo, controles, boton_agregar):
-        activo = (
-            producto_id in self.productos_activos
-            and self.estado_carrito[producto_id]["cantidad"] > 0
+    def seleccionar_categoria(self, categoria):
+        self.categoria_seleccionada = categoria
+        self.btn_combinar.visible = self.mostrar_combinador and categoria in (
+            "Todas",
+            "Pizzas",
         )
-        controles.visible = activo
-        campo.visible = activo
-        boton_agregar.visible = not activo
-        self.actualizar_si_montado(controles)
-        self.actualizar_si_montado(boton_agregar)
+        self.construir_barra_categorias()
+        self.construir_catalogo()
+        self.actualizar_si_montado(self.row_categorias)
+        self.actualizar_si_montado(self.btn_combinar)
+        self.actualizar_si_montado(self.lista_productos_column)
 
-    def incrementar_cantidad(self, producto_id, campo, controles, boton_agregar):
-        self.productos_activos.add(producto_id)
-        self.estado_carrito[producto_id]["cantidad"] += 1
-        campo.value = str(self.estado_carrito[producto_id]["cantidad"])
-        self.actualizar_controles_cantidad(producto_id, campo, controles, boton_agregar)
-        self.on_cart_change()
-
-    def decrementar_cantidad(self, producto_id, campo, controles, boton_agregar):
-        cantidad = self.estado_carrito[producto_id]["cantidad"]
-        if cantidad == 0:
+    def abrir_combinador_usuario(self, e=None):
+        try:
+            pagina = self.page
+        except RuntimeError:
+            pagina = None
+        if pagina is None:
             return
-        cantidad -= 1
-        self.estado_carrito[producto_id]["cantidad"] = cantidad
-        campo.value = str(cantidad) if cantidad > 0 else ""
-        if cantidad == 0:
-            self.productos_activos.discard(producto_id)
-        self.actualizar_controles_cantidad(producto_id, campo, controles, boton_agregar)
-        self.on_cart_change()
+        abrir_modal_combinar_pizza(
+            pagina,
+            self.es_movil,
+            self.agregar_producto_combinado,
+        )
 
-    def obtener_items_estado(self):
-        return [
-            {"nombre": datos["nombre"], "precio": datos["precio"], "cantidad": datos["cantidad"]}
-            for pid, datos in self.estado_carrito.items() if datos["cantidad"] > 0
+    def agregar_producto_combinado(self, combo):
+        id_combo = f"combo_{combo['nombre']}"
+        existente = next(
+            (p for p in self.productos if p["id"] == id_combo),
+            None,
+        )
+        if existente is None:
+            self.productos.insert(
+                0,
+                {
+                    "id": id_combo,
+                    "nombre": combo["nombre"],
+                    "precio": float(combo["precio"]),
+                    "categoria": "Pizzas",
+                    "descripcion": "Pizza combinada a precio fijo por tamaño.",
+                    "imagen": "pizza_pepperoni.png",
+                },
+            )
+        if id_combo not in self.estado_carrito:
+            self.estado_carrito[id_combo] = {
+                "cantidad": 0,
+                "precio": float(combo["precio"]),
+            }
+        self.estado_carrito[id_combo]["cantidad"] += int(
+            combo.get("cantidad", 1)
+        )
+        self.productos_activos.add(id_combo)
+        self.construir_catalogo()
+        self.actualizar_si_montado(self.lista_productos_column)
+        if self.on_cart_change:
+            self.on_cart_change()
+
+    def modificar_cantidad(self, prod_id, delta):
+        datos = self.estado_carrito.get(prod_id)
+        if not datos:
+            return
+        nueva = max(0, datos["cantidad"] + delta)
+        datos["cantidad"] = nueva
+        if nueva > 0:
+            self.productos_activos.add(prod_id)
+        else:
+            self.productos_activos.discard(prod_id)
+        self.construir_catalogo()
+        self.actualizar_si_montado(self.lista_productos_column)
+        if self.on_cart_change:
+            self.on_cart_change()
+
+    def construir_catalogo(self):
+        self.lista_productos_column.controls.clear()
+        filtrados = [
+            p
+            for p in self.productos
+            if self.categoria_seleccionada == "Todas"
+            or p["categoria"] == self.categoria_seleccionada
         ]
 
-    def limpiar_carrito(self):
-        for datos in self.estado_carrito.values():
-            datos["cantidad"] = 0
-        self.productos_activos.clear()
-        self.construir_catalogo()
-        self.actualizar_si_montado(self)
+        for prod in filtrados:
+            pid = prod["id"]
+            cant = self.estado_carrito[pid]["cantidad"]
+            disponible = (
+                pizza_disponible_en_todas_versiones(
+                    prod["nombre"], self.mapa_disponibilidad
+                )
+                if prod["categoria"] == "Pizzas"
+                else True
+            )
+
+            if not disponible and cant > 0:
+                self.estado_carrito[pid]["cantidad"] = 0
+                self.productos_activos.discard(pid)
+                cant = 0
+
+            if not disponible:
+                control_accion = ft.Container(
+                    padding=ft.Padding(left=10, top=6, right=10, bottom=6),
+                    bgcolor="#FCE8E6",
+                    border_radius=12,
+                    content=ft.Text(
+                        "No disponible",
+                        size=12,
+                        weight=ft.FontWeight.BOLD,
+                        color="#6A0404",
+                    ),
+                )
+            elif cant == 0:
+                control_accion = ft.FilledButton(
+                    "Agregar",
+                    icon=ft.Icons.ADD,
+                    bgcolor="#6A0404",
+                    color=ft.Colors.WHITE,
+                    height=38,
+                    on_click=lambda e, i=pid: self.modificar_cantidad(i, 1),
+                )
+            else:
+                control_accion = ft.Row(
+                    spacing=4,
+                    controls=[
+                        ft.IconButton(
+                            icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
+                            icon_color="#6A0404",
+                            icon_size=22,
+                            on_click=lambda e, i=pid: self.modificar_cantidad(
+                                i, -1
+                            ),
+                        ),
+                        ft.Text(
+                            str(cant),
+                            size=15,
+                            weight=ft.FontWeight.BOLD,
+                            color="#3F302B",
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.ADD_CIRCLE,
+                            icon_color="#6A0404",
+                            icon_size=22,
+                            on_click=lambda e, i=pid: self.modificar_cantidad(
+                                i, 1
+                            ),
+                        ),
+                    ],
+                )
+
+            self.lista_productos_column.controls.append(
+                ft.Container(
+                    padding=12,
+                    bgcolor=ft.Colors.WHITE if disponible else "#F7F4F2",
+                    border_radius=16,
+                    border=ft.Border.all(
+                        1.5 if cant > 0 else 1,
+                        "#6A0404" if cant > 0 else "#F0D8CA",
+                    ),
+                    shadow=ft.BoxShadow(
+                        blur_radius=8,
+                        color=ft.Colors.with_opacity(0.05, ft.Colors.BLACK),
+                        offset=ft.Offset(0, 2),
+                    ),
+                    content=ft.Row(
+                        spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            ft.Container(
+                                width=54,
+                                height=54,
+                                bgcolor="#FFF1E7",
+                                border_radius=14,
+                                alignment=ft.Alignment.CENTER,
+                                content=ft.Icon(
+                                    ft.Icons.LOCAL_PIZZA
+                                    if prod["categoria"] == "Pizzas"
+                                    else (
+                                        ft.Icons.LOCAL_DRINK
+                                        if prod["categoria"] == "Bebidas"
+                                        else ft.Icons.FASTFOOD
+                                    ),
+                                    color="#6A0404" if disponible else "#9E9E9E",
+                                    size=28,
+                                ),
+                            ),
+                            ft.Column(
+                                spacing=3,
+                                expand=True,
+                                controls=[
+                                    ft.Text(
+                                        prod["nombre"],
+                                        size=15,
+                                        weight=ft.FontWeight.BOLD,
+                                        color="#2B2B2B"
+                                        if disponible
+                                        else "#806B63",
+                                    ),
+                                    ft.Text(
+                                        prod.get("descripcion", ""),
+                                        size=12,
+                                        color="#806B63",
+                                        max_lines=2,
+                                    ),
+                                    ft.Text(
+                                        f"${prod['precio']:.2f}",
+                                        size=14,
+                                        weight=ft.FontWeight.BOLD,
+                                        color="#6A0404"
+                                        if disponible
+                                        else "#9E9E9E",
+                                    ),
+                                ],
+                            ),
+                            control_accion,
+                        ],
+                    ),
+                )
+            )
