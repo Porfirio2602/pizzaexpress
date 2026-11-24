@@ -113,13 +113,20 @@ class CocineroView(ft.Column):
                 ),
             ),
         ]
-        self.cargar_pedidos(None)
+
+    def _obtener_pagina(self):
+        try:
+            return self.page
+        except RuntimeError:
+            return None
 
     def did_mount(self):
         self._actualizacion_activa = True
         self._generacion_actualizacion += 1
-        if self.page is not None:
-            self.page.run_task(
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._cargar_pedidos_async)
+            pagina.run_task(
                 self.actualizar_automaticamente,
                 self._generacion_actualizacion,
             )
@@ -157,8 +164,9 @@ class CocineroView(ft.Column):
         )
 
     def cargar_pedidos(self, e):
-        if self.page is not None:
-            self.page.run_task(self._cargar_pedidos_async)
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._cargar_pedidos_async)
             return
         try:
             respuesta = self.solicitar_pedidos()
@@ -332,8 +340,9 @@ class CocineroView(ft.Column):
         )
 
     def marcar_listo(self, id_pedido, boton):
-        if self.page is not None:
-            self.page.run_task(self._marcar_listo_async, id_pedido, boton)
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._marcar_listo_async, id_pedido, boton)
 
     async def _marcar_listo_async(self, id_pedido, boton):
         boton.disabled = True
@@ -372,8 +381,9 @@ class CocineroView(ft.Column):
         await self._cargar_pedidos_async()
 
     def actualizar_ui(self):
+        pagina = self._obtener_pagina()
         try:
-            if self.page is not None:
+            if pagina is not None:
                 self.update()
         except RuntimeError:
             return
