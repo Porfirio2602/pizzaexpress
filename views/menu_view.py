@@ -1,3 +1,4 @@
+import asyncio
 import flet as ft
 from components.pizzas_combinadas import (
     abrir_modal_combinar_pizza,
@@ -23,7 +24,7 @@ class MenuView(ft.Column):
 
         self.categoria_seleccionada = categoria_inicial or "Todas"
         self.productos_activos = set()
-        self.mapa_disponibilidad = obtener_mapa_disponibilidad()
+        self.mapa_disponibilidad = {}
 
         self.productos = [
             {
@@ -124,47 +125,63 @@ class MenuView(ft.Column):
             and self.categoria_seleccionada in ("Todas", "Pizzas"),
             on_click=self.abrir_combinador_usuario,
         )
-        self.lista_productos_column = ft.Column(spacing=10)
+        self.lista_productos_column = ft.Column(
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
 
         self.construir_barra_categorias()
         self.construir_catalogo()
+
+        if self.es_movil:
+            barra_superior_menu = ft.Column(
+                spacing=8,
+                controls=[
+                    self.row_categorias,
+                    self.btn_combinar,
+                ],
+            )
+        else:
+            barra_superior_menu = ft.Row(
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(content=self.row_categorias, expand=True),
+                    self.btn_combinar,
+                ],
+            )
 
         self.controls = [
             ft.Container(
                 expand=True,
                 bgcolor="#FFF8F2",
+                padding=ft.Padding(left=8, top=8, right=8, bottom=8),
                 content=ft.Column(
                     expand=True,
                     spacing=10,
                     controls=[
-                        ft.Container(
-                            padding=ft.Padding(left=6, top=4, right=6, bottom=2),
-                            content=ft.Row(
-                                [
-                                    ft.Container(content=self.row_categorias, expand=True),
-                                    self.btn_combinar,
-                                ],
-                                wrap=True,
-                                spacing=8,
-                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            ),
-                        ),
-                        ft.Container(
-                            expand=True,
-                            padding=ft.Padding(left=6, top=2, right=6, bottom=10),
-                            content=ft.Column(
-                                scroll=ft.ScrollMode.AUTO,
-                                expand=True,
-                                controls=[self.lista_productos_column],
-                            ),
-                        ),
+                        barra_superior_menu,
+                        self.lista_productos_column,
                     ],
                 ),
             )
         ]
 
     def did_mount(self):
-        self.refrescar_disponibilidad()
+        try:
+            pagina = self.page
+        except RuntimeError:
+            pagina = None
+        if pagina is not None:
+            pagina.run_task(self._refrescar_disponibilidad_async)
+
+    async def _refrescar_disponibilidad_async(self):
+        self.mapa_disponibilidad = await asyncio.to_thread(
+            obtener_mapa_disponibilidad
+        )
+        self.construir_catalogo()
+        self.actualizar_si_montado(self.lista_productos_column)
 
     def refrescar_disponibilidad(self):
         self.mapa_disponibilidad = obtener_mapa_disponibilidad()
