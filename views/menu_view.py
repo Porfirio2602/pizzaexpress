@@ -204,6 +204,12 @@ class MenuView(ft.Column):
         self.actualizar_si_montado(self.btn_combinar)
         self.actualizar_si_montado(self.lista_productos_column)
 
+    def cambiar_categoria(self, categoria):
+        categorias_validas = {"Todas", "Pizzas", "Bebidas", "Complementos"}
+        self.seleccionar_categoria(
+            categoria if categoria in categorias_validas else "Todas"
+        )
+
     def abrir_combinador_usuario(self, e=None):
         try:
             pagina = self.page
@@ -259,6 +265,31 @@ class MenuView(ft.Column):
             self.productos_activos.add(prod_id)
         else:
             self.productos_activos.discard(prod_id)
+        self.construir_catalogo()
+        self.actualizar_si_montado(self.lista_productos_column)
+        if self.on_cart_change:
+            self.on_cart_change()
+
+    def obtener_items_estado(self):
+        items = []
+        for prod in self.productos:
+            datos = self.estado_carrito.get(prod["id"])
+            if datos and datos["cantidad"] > 0:
+                items.append(
+                    {
+                        "id": prod["id"],
+                        "nombre": prod["nombre"],
+                        "precio": float(datos["precio"]),
+                        "cantidad": int(datos["cantidad"]),
+                        "categoria": prod.get("categoria", ""),
+                    }
+                )
+        return items
+
+    def limpiar_carrito(self):
+        for datos in self.estado_carrito.values():
+            datos["cantidad"] = 0
+        self.productos_activos.clear()
         self.construir_catalogo()
         self.actualizar_si_montado(self.lista_productos_column)
         if self.on_cart_change:
