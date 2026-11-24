@@ -15,6 +15,7 @@ from views.vendedor_view import VendedorView
 from views.cocinero_view import CocineroView
 from views.gerencia_view import GerenciaView
 
+# Directorio persistente compatible con Android (FLET_APP_STORAGE_DATA) y escritorio
 STORAGE_DIR = os.environ.get("FLET_APP_STORAGE_DATA", ".")
 os.makedirs(STORAGE_DIR, exist_ok=True)
 SESION_FILE = os.path.join(STORAGE_DIR, "sesion.json")
@@ -274,19 +275,19 @@ def construir_aplicacion(page: ft.Page):
         if rol == "gerente":
             contenido_principal.content = GerenciaView(
                 personal=personal_actual,
-                on_cerrar_sesion=cerrar_sesion_personal,
+                on_cerrar_sesion=lambda: cerrar_sesion_personal("gerente"),
                 es_movil=es_movil,
             )
         elif rol == "cocinero":
             contenido_principal.content = CocineroView(
                 personal=personal_actual,
-                on_cerrar_sesion=cerrar_sesion_personal,
+                on_cerrar_sesion=lambda: cerrar_sesion_personal("cocinero"),
                 es_movil=es_movil,
             )
         else:
             contenido_principal.content = VendedorView(
                 personal=personal_actual,
-                on_cerrar_sesion=cerrar_sesion_personal,
+                on_cerrar_sesion=lambda: cerrar_sesion_personal("vendedor"),
                 es_movil=es_movil,
             )
         page.update()
@@ -343,11 +344,20 @@ def construir_aplicacion(page: ft.Page):
         menu_lateral.actualizar_personal(personal_actual)
         mostrar_panel_personal()
 
-    def cerrar_sesion_personal():
+    def cerrar_sesion_personal(rol_destino=None):
+        rol = rol_destino or personal_actual.get("rol")
         personal_actual.clear()
         limpiar_sesion_personal()
         menu_lateral.actualizar_personal(personal_actual)
-        regresar_inicio_general()
+
+        if rol == "vendedor":
+            ir_a_vendedor()
+        elif rol == "cocinero":
+            ir_a_cocina()
+        elif rol == "gerente":
+            ir_a_gerencia()
+        else:
+            regresar_inicio_general()
 
     def manejar_login_exitoso(id_usu, nom, ape, token):
         usuario_actual["id"] = id_usu
@@ -519,8 +529,11 @@ def construir_aplicacion(page: ft.Page):
                 icono_animado.content = ft.Icon(
                     iconos[indice], size=52, color="#6A0404"
                 )
-                if icono_animado.page is not None:
-                    icono_animado.update()
+                try:
+                    if icono_animado.page is not None:
+                        icono_animado.update()
+                except RuntimeError:
+                    break
 
         abrir_dialogo_seguro(dialogo)
         page.run_task(animar_icono)
@@ -718,8 +731,11 @@ def construir_aplicacion(page: ft.Page):
         else:
             btn_comprar.visible = False
 
-        if btn_comprar.page is not None:
-            btn_comprar.update()
+        try:
+            if btn_comprar.page is not None:
+                btn_comprar.update()
+        except RuntimeError:
+            pass
 
     def actualizar_encabezado_carrito():
         cantidad = sum(

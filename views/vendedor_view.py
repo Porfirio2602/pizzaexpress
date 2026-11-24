@@ -5,7 +5,6 @@ import requests
 import flet as ft
 import flet_camera as fc
 import flet_permission_handler as fph
-from components.pizzas_combinadas import abrir_modal_combinar_pizza
 from config import BASE_URL
 from views.menu_view import MenuView
 
@@ -18,6 +17,7 @@ class VendedorView(ft.Column):
         self.es_movil = es_movil
         self._actualizacion_activa = False
         self._generacion_actualizacion = 0
+        self._sesion_cerrada = False
         self.spacing = 12
         self.expand = True
         borde_campo = {
@@ -77,13 +77,6 @@ class VendedorView(ft.Column):
             categoria_inicial="Pizzas",
             es_movil=es_movil,
             mostrar_combinador=True,
-        )
-        self.btn_combinar_vendedor = ft.FilledButton(
-            "Combinar pizza (precio fijo)",
-            icon=ft.Icons.LOCAL_PIZZA,
-            bgcolor="#6A0404",
-            color=ft.Colors.WHITE,
-            on_click=self.abrir_combinador_vendedor,
         )
         self.txt_nombre = ft.TextField(
             label="Nombre completo del cliente",
@@ -344,95 +337,103 @@ class VendedorView(ft.Column):
             expand=True,
             spacing=8,
             controls=[
-                ft.Row(
-                    [self.btn_combinar_vendedor],
-                    alignment=ft.MainAxisAlignment.END,
-                ),
                 self.menu,
                 self.boton_pagar_ahora,
             ],
         )
-        self.seccion_pedidos = ft.Container(
-            padding=14,
-            bgcolor=ft.Colors.WHITE,
-            border_radius=14,
-            content=ft.Column(
-                spacing=10,
-                controls=[
-                    ft.Row(
-                        [
+        self.seccion_pedidos = ft.Column(
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+            controls=[
+                ft.Container(
+                    padding=14,
+                    bgcolor=ft.Colors.WHITE,
+                    border_radius=14,
+                    content=ft.Column(
+                        spacing=10,
+                        controls=[
+                            ft.Row(
+                                [
+                                    ft.Text(
+                                        "Pedidos de mi turno",
+                                        size=19,
+                                        weight=ft.FontWeight.BOLD,
+                                        color="#6A0404",
+                                        expand=True,
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.REFRESH,
+                                        tooltip="Actualizar pedidos",
+                                        icon_color="#6A0404",
+                                        on_click=self.cargar_pedidos,
+                                    ),
+                                ],
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
                             ft.Text(
-                                "Pedidos de mi turno",
-                                size=19,
+                                "Ordenados del más reciente al más antiguo. "
+                                "Actualización automática cada 30 segundos.",
+                                size=14,
+                                color="#806B63",
+                            ),
+                            self.lista_pedidos,
+                        ],
+                    ),
+                )
+            ],
+        )
+        self.seccion_entregas = ft.Column(
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+            controls=[
+                ft.Container(
+                    padding=16,
+                    bgcolor="#FFF8F2",
+                    border_radius=14,
+                    content=ft.Column(
+                        spacing=12,
+                        controls=[
+                            ft.Text(
+                                "Validar entrega",
+                                size=20,
                                 weight=ft.FontWeight.BOLD,
                                 color="#6A0404",
-                                expand=True,
                             ),
-                            ft.IconButton(
-                                icon=ft.Icons.REFRESH,
-                                tooltip="Actualizar pedidos",
-                                icon_color="#6A0404",
-                                on_click=self.cargar_pedidos,
+                            ft.Text(
+                                "Escanea el código de barras del pedido o escríbelo "
+                                "manualmente para confirmar su entrega.",
+                                size=15,
+                                color="#806B63",
                             ),
+                            ft.Row(
+                                [
+                                    self.txt_codigo_pedido,
+                                    ft.FilledButton(
+                                        "Buscar pedido",
+                                        icon=ft.Icons.SEARCH,
+                                        bgcolor="#6A0404",
+                                        color=ft.Colors.WHITE,
+                                        height=48,
+                                        on_click=self.buscar_pedido_por_codigo,
+                                    ),
+                                ],
+                                wrap=True,
+                                spacing=10,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            self.detalle_pedido_entrega,
+                            self.boton_abrir_escaner,
+                            ft.Text(
+                                "Los lectores USB/Bluetooth que escriben el código "
+                                "y envían Enter son compatibles.",
+                                size=14,
+                                color="#806B63",
+                            ),
+                            self.lbl_estado_entrega,
                         ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    ft.Text(
-                        "Ordenados del más reciente al más antiguo. "
-                        "Actualización automática cada 30 segundos.",
-                        size=14,
-                        color="#806B63",
-                    ),
-                    self.lista_pedidos,
-                ],
-            ),
-        )
-        self.seccion_entregas = ft.Container(
-            padding=16,
-            bgcolor="#FFF8F2",
-            border_radius=14,
-            content=ft.Column(
-                spacing=12,
-                controls=[
-                    ft.Text(
-                        "Validar entrega",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color="#6A0404",
-                    ),
-                    ft.Text(
-                        "Escanea el código de barras del pedido o escríbelo "
-                        "manualmente para confirmar su entrega.",
-                        size=15,
-                        color="#806B63",
-                    ),
-                    ft.Row(
-                        [
-                            self.txt_codigo_pedido,
-                            ft.FilledButton(
-                                "Buscar pedido",
-                                icon=ft.Icons.SEARCH,
-                                bgcolor="#6A0404",
-                                color=ft.Colors.WHITE,
-                                height=48,
-                                on_click=self.buscar_pedido_por_codigo,
-                            ),
-                        ],
-                        wrap=True,
-                        spacing=10,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    self.detalle_pedido_entrega,
-                    self.boton_abrir_escaner,
-                    ft.Text(
-                        "Los lectores USB/Bluetooth que escriben el código "
-                        "y envían Enter son compatibles.",
-                        size=14,
-                        color="#806B63",
-                    ),
-                    self.lbl_estado_entrega,
-                ],
-            ),
+                )
+            ],
         )
         ancho_checkout = 420 if not es_movil else 300
         self.contenido_pago = ft.Column(
@@ -504,10 +505,9 @@ class VendedorView(ft.Column):
             self.seccion_entregas,
         ]
         self.indice_seccion = 0
-        self.contenido_seccion = ft.Column(
-            controls=[self.seccion_menu],
+        self.contenido_seccion = ft.Container(
+            content=self.seccion_menu,
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
         )
         self.opciones_navegacion = [
             ("Menú", ft.Icons.LOCAL_PIZZA_OUTLINED, ft.Icons.LOCAL_PIZZA),
@@ -530,21 +530,24 @@ class VendedorView(ft.Column):
             self.navegacion_secciones,
         ]
         self.actualizar_resumen_pago()
-        self.cargar_pedidos(None)
 
-    def abrir_combinador_vendedor(self, e=None):
+    def _obtener_pagina(self):
         try:
-            pagina = self.page
+            return self.page
         except RuntimeError:
-            pagina = None
-        if pagina is None:
-            return
+            return None
 
-        def al_agregar(combo):
-            self.menu.agregar_producto_combinado(combo)
-            self.actualizar_total()
-
-        abrir_modal_combinar_pizza(pagina, self.es_movil, al_agregar)
+    def _manejar_sesion_expirada(self, respuesta):
+        if respuesta.status_code in (401, 403):
+            if not self._sesion_cerrada:
+                self._sesion_cerrada = True
+                self._actualizacion_activa = False
+                self._generacion_actualizacion += 1
+                self.cerrar_checkout()
+                self.cerrar_escaner_camara()
+                self.on_cerrar_sesion()
+            return True
+        return False
 
     def crear_boton_accion_pago(self, titulo, subtitulo, accion):
         self.total_accion_pago = ft.Text(
@@ -670,18 +673,20 @@ class VendedorView(ft.Column):
             return
         self.paso_checkout = "servicio"
         self.construir_pantalla_servicio()
-        if self.page is not None:
+        pagina = self._obtener_pagina()
+        if pagina is not None:
             try:
-                self.page.show_dialog(self.dialogo_checkout)
+                pagina.show_dialog(self.dialogo_checkout)
             except RuntimeError as error:
                 if "Dialog is already opened" in str(error):
-                    self.page.pop_dialog()
-                    self.page.show_dialog(self.dialogo_checkout)
+                    pagina.pop_dialog()
+                    pagina.show_dialog(self.dialogo_checkout)
 
     def cerrar_checkout(self, e=None):
-        if self.page is not None:
+        pagina = self._obtener_pagina()
+        if pagina is not None:
             try:
-                self.page.pop_dialog()
+                pagina.pop_dialog()
             except RuntimeError:
                 pass
 
@@ -967,7 +972,7 @@ class VendedorView(ft.Column):
         if not 0 <= indice < len(self.secciones):
             return
         self.indice_seccion = indice
-        self.contenido_seccion.controls = [self.secciones[indice]]
+        self.contenido_seccion.content = self.secciones[indice]
         try:
             if self.contenido_seccion.page is not None:
                 self.contenido_seccion.update()
@@ -983,8 +988,9 @@ class VendedorView(ft.Column):
             return
 
     def buscar_pedido_por_codigo(self, e):
-        if self.page is not None:
-            self.page.run_task(self._buscar_pedido_async, e)
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._buscar_pedido_async, e)
 
     async def _buscar_pedido_async(self, e):
         codigo = (self.txt_codigo_pedido.value or "").strip().upper()
@@ -1014,6 +1020,9 @@ class VendedorView(ft.Column):
                 "No se pudo conectar con el servidor."
             )
             self.actualizar_estado_entrega()
+            return
+
+        if self._manejar_sesion_expirada(respuesta):
             return
 
         if respuesta.status_code == 404:
@@ -1189,8 +1198,9 @@ class VendedorView(ft.Column):
         self.actualizar_estado_entrega()
 
     def confirmar_entrega_pedido(self, e):
-        if self.page is not None:
-            self.page.run_task(self._confirmar_entrega_async, e)
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._confirmar_entrega_async, e)
 
     async def _confirmar_entrega_async(self, e):
         if not self.codigo_pedido_encontrado:
@@ -1214,6 +1224,9 @@ class VendedorView(ft.Column):
             self.actualizar_estado_entrega()
             return
 
+        if self._manejar_sesion_expirada(respuesta):
+            return
+
         if (
             respuesta.status_code == 404
             and self.id_pedido_encontrado is not None
@@ -1234,6 +1247,9 @@ class VendedorView(ft.Column):
                     "No se pudo conectar con el servidor."
                 )
                 self.actualizar_estado_entrega()
+                return
+
+            if self._manejar_sesion_expirada(respuesta):
                 return
 
         if respuesta.status_code != 200:
@@ -1265,6 +1281,10 @@ class VendedorView(ft.Column):
 
     async def abrir_escaner_camara(self, e):
         if not self.es_movil or self.dialogo_escaner is not None:
+            return
+
+        pagina = self._obtener_pagina()
+        if pagina is None:
             return
 
         try:
@@ -1336,7 +1356,7 @@ class VendedorView(ft.Column):
             actions_alignment=ft.MainAxisAlignment.END,
         )
         try:
-            self.page.show_dialog(self.dialogo_escaner)
+            pagina.show_dialog(self.dialogo_escaner)
         except RuntimeError:
             self.cerrar_escaner_camara()
             return
@@ -1387,9 +1407,10 @@ class VendedorView(ft.Column):
         self.camara_entrega = None
         self.dialogo_escaner = None
         self._escaneo_en_proceso = False
-        if dialogo_activo is not None and self.page is not None:
+        pagina = self._obtener_pagina()
+        if dialogo_activo is not None and pagina is not None:
             try:
-                self.page.pop_dialog()
+                pagina.pop_dialog()
             except RuntimeError:
                 pass
 
@@ -1437,6 +1458,9 @@ class VendedorView(ft.Column):
             return
 
         self._escaneo_en_proceso = False
+        if self._manejar_sesion_expirada(respuesta):
+            return
+
         if respuesta.status_code == 404:
             self.lbl_estado_escaner.value = (
                 "El servidor aún no tiene activa la lectura por cámara. "
@@ -1476,10 +1500,13 @@ class VendedorView(ft.Column):
     def did_mount(self):
         self._actualizacion_activa = True
         self._generacion_actualizacion += 1
-        self.page.run_task(
-            self.actualizar_pedidos_automaticamente,
-            self._generacion_actualizacion,
-        )
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._cargar_pedidos_async)
+            pagina.run_task(
+                self.actualizar_pedidos_automaticamente,
+                self._generacion_actualizacion,
+            )
 
     def will_unmount(self):
         self._actualizacion_activa = False
@@ -1615,8 +1642,9 @@ class VendedorView(ft.Column):
             if metodo_pago == "Efectivo"
             else f"Pedido {codigo} registrado. Pago de tarjeta de demostración."
         )
-        if self.page is not None:
-            self.page.show_dialog(
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.show_dialog(
                 ft.AlertDialog(
                     modal=True,
                     title=ft.Text("¡Pago efectuado!", color="#6A0404"),
@@ -1626,7 +1654,7 @@ class VendedorView(ft.Column):
                             "Aceptar",
                             bgcolor="#6A0404",
                             color=ft.Colors.WHITE,
-                            on_click=lambda e: self.page.pop_dialog(),
+                            on_click=lambda e: pagina.pop_dialog(),
                         )
                     ],
                     actions_alignment=ft.MainAxisAlignment.CENTER,
@@ -1634,8 +1662,9 @@ class VendedorView(ft.Column):
             )
 
     def registrar_pedido(self, e):
-        if self.page is not None:
-            self.page.run_task(self._registrar_pedido_async, e)
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._registrar_pedido_async, e)
 
     async def _registrar_pedido_async(self, e):
         self.lbl_error_pago.value = ""
@@ -1696,7 +1725,9 @@ class VendedorView(ft.Column):
             "metodo_pago": metodo_pago,
             "items": [
                 {
-                    "producto_id": ids_por_nombre[item["nombre"]],
+                    "producto_id": ids_por_nombre.get(
+                        item["nombre"], item.get("id")
+                    ),
                     "nombre_pizza": item["nombre"],
                     "cantidad": item["cantidad"],
                 }
@@ -1724,6 +1755,9 @@ class VendedorView(ft.Column):
             return
 
         self.boton_finalizar_pago.disabled = False
+        if self._manejar_sesion_expirada(respuesta):
+            return
+
         if respuesta.status_code != 201:
             try:
                 detalle = respuesta.json().get("detail")
@@ -1756,7 +1790,26 @@ class VendedorView(ft.Column):
         self.cerrar_checkout()
         self.mostrar_alerta_pago(codigo, cambio, metodo_pago)
 
+    async def _cargar_pedidos_async(self):
+        try:
+            respuesta = await asyncio.to_thread(self.solicitar_pedidos)
+        except requests.RequestException:
+            self.lista_pedidos.controls = [
+                ft.Text(
+                    "No se pudo actualizar el historial. Inténtalo de nuevo.",
+                    color="#8A3B2E",
+                )
+            ]
+            self.actualizar_lista_pedidos()
+            return
+        if self._actualizacion_activa:
+            self.mostrar_pedidos(respuesta)
+
     def cargar_pedidos(self, e):
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._cargar_pedidos_async)
+            return
         try:
             respuesta = self.solicitar_pedidos()
         except requests.RequestException:
@@ -1781,6 +1834,9 @@ class VendedorView(ft.Column):
         )
 
     def mostrar_pedidos(self, respuesta):
+        if self._manejar_sesion_expirada(respuesta):
+            return
+
         if respuesta.status_code != 200:
             try:
                 detalle = respuesta.json().get("detail")
@@ -1928,8 +1984,9 @@ class VendedorView(ft.Column):
         )
 
     def cambiar_estado_pedido(self, id_pedido, estado):
-        if self.page is not None:
-            self.page.run_task(
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(
                 self._cambiar_estado_pedido_async, id_pedido, estado
             )
 
@@ -1947,6 +2004,9 @@ class VendedorView(ft.Column):
         except requests.RequestException:
             self.lbl_estado.value = "No se pudo conectar con el servidor."
             self.actualizar_estado()
+            return
+
+        if self._manejar_sesion_expirada(respuesta):
             return
 
         if respuesta.status_code != 200:

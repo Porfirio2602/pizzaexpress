@@ -35,6 +35,7 @@ class CocineroView(ft.Column):
         self.es_movil = es_movil
         self._actualizacion_activa = False
         self._generacion_actualizacion = 0
+        self._sesion_cerrada = False
         self.expand = True
         self.spacing = 12
         self.token_headers = {
@@ -149,6 +150,22 @@ class CocineroView(ft.Column):
         except RuntimeError:
             return None
 
+    def _manejar_sesion_expirada(self, respuesta):
+        if respuesta.status_code in (401, 403):
+            if not self._sesion_cerrada:
+                self._sesion_cerrada = True
+                self._actualizacion_activa = False
+                self._generacion_actualizacion += 1
+                pagina = self._obtener_pagina()
+                if pagina is not None:
+                    try:
+                        pagina.pop_dialog()
+                    except RuntimeError:
+                        pass
+                self.on_cerrar_sesion()
+            return True
+        return False
+
     def did_mount(self):
         self._actualizacion_activa = True
         self._generacion_actualizacion += 1
@@ -214,6 +231,9 @@ class CocineroView(ft.Column):
         self.renderizar_respuesta(respuesta)
 
     def renderizar_respuesta(self, respuesta):
+        if self._manejar_sesion_expirada(respuesta):
+            return
+
         if respuesta.status_code != 200:
             try:
                 detalle = respuesta.json().get("detail")
@@ -631,7 +651,7 @@ class CocineroView(ft.Column):
             if not ing:
                 return
             try:
-                await asyncio.to_thread(
+                respuesta = await asyncio.to_thread(
                     requests.post,
                     f"{BASE_URL}/api/cocina/ingredientes/faltantes",
                     json={
@@ -642,6 +662,8 @@ class CocineroView(ft.Column):
                     timeout=15,
                 )
             except requests.RequestException:
+                return
+            if self._manejar_sesion_expirada(respuesta):
                 return
             cerrar_dialogo()
             self.lbl_estado.value = (
@@ -694,6 +716,9 @@ class CocineroView(ft.Column):
             boton.text = "Marcar pedido listo"
             self.lbl_estado.value = "No se pudo conectar con el servidor."
             self.actualizar_ui()
+            return
+
+        if self._manejar_sesion_expirada(respuesta):
             return
 
         if respuesta.status_code != 200:
