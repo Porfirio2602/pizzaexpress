@@ -131,26 +131,36 @@ class MenuView(ft.Column):
 
         self.controls = [
             ft.Container(
-                padding=ft.Padding(left=6, top=4, right=6, bottom=2),
-                content=ft.Row(
-                    [
-                        ft.Container(content=self.row_categorias, expand=True),
-                        self.btn_combinar,
-                    ],
-                    wrap=True,
-                    spacing=8,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-            ),
-            ft.Container(
                 expand=True,
-                padding=ft.Padding(left=6, top=2, right=6, bottom=10),
+                bgcolor="#FFF8F2",
                 content=ft.Column(
-                    scroll=ft.ScrollMode.AUTO,
                     expand=True,
-                    controls=[self.lista_productos_column],
+                    spacing=10,
+                    controls=[
+                        ft.Container(
+                            padding=ft.Padding(left=6, top=4, right=6, bottom=2),
+                            content=ft.Row(
+                                [
+                                    ft.Container(content=self.row_categorias, expand=True),
+                                    self.btn_combinar,
+                                ],
+                                wrap=True,
+                                spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                        ),
+                        ft.Container(
+                            expand=True,
+                            padding=ft.Padding(left=6, top=2, right=6, bottom=10),
+                            content=ft.Column(
+                                scroll=ft.ScrollMode.AUTO,
+                                expand=True,
+                                controls=[self.lista_productos_column],
+                            ),
+                        ),
+                    ],
                 ),
-            ),
+            )
         ]
 
     def did_mount(self):

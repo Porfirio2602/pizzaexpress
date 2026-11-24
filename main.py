@@ -222,7 +222,7 @@ def construir_aplicacion(page: ft.Page):
     modalidad_entrega = ["A Domicilio"]
 
     contenido_principal = ft.AnimatedSwitcher(
-        content=ft.Container(expand=True),
+        content=ft.Container(expand=True, bgcolor="#FFF8F2"),
         transition=ft.AnimatedSwitcherTransition.FADE,
         duration=350,
         reverse_duration=250,
