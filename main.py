@@ -15,7 +15,6 @@ from views.vendedor_view import VendedorView
 from views.cocinero_view import CocineroView
 from views.gerencia_view import GerenciaView
 
-# Directorio persistente compatible con Android (FLET_APP_STORAGE_DATA) y escritorio
 STORAGE_DIR = os.environ.get("FLET_APP_STORAGE_DATA", ".")
 os.makedirs(STORAGE_DIR, exist_ok=True)
 SESION_FILE = os.path.join(STORAGE_DIR, "sesion.json")
@@ -400,8 +399,11 @@ def construir_aplicacion(page: ft.Page):
 
     def actualizar_alto_menu(e):
         menu_lateral.height = page.height or 760
-        if menu_lateral.page is not None:
-            menu_lateral.update()
+        try:
+            if menu_lateral.page is not None:
+                menu_lateral.update()
+        except RuntimeError:
+            pass
 
     page.on_resize = actualizar_alto_menu
 

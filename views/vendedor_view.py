@@ -5,6 +5,7 @@ import requests
 import flet as ft
 import flet_camera as fc
 import flet_permission_handler as fph
+from components.pizzas_combinadas import abrir_modal_combinar_pizza
 from config import BASE_URL
 from views.menu_view import MenuView
 
@@ -75,6 +76,14 @@ class VendedorView(ft.Column):
             on_cart_change=self.actualizar_total,
             categoria_inicial="Pizzas",
             es_movil=es_movil,
+            mostrar_combinador=True,
+        )
+        self.btn_combinar_vendedor = ft.FilledButton(
+            "Combinar pizza (precio fijo)",
+            icon=ft.Icons.LOCAL_PIZZA,
+            bgcolor="#6A0404",
+            color=ft.Colors.WHITE,
+            on_click=self.abrir_combinador_vendedor,
         )
         self.txt_nombre = ft.TextField(
             label="Nombre completo del cliente",
@@ -333,8 +342,15 @@ class VendedorView(ft.Column):
         )
         self.seccion_menu = ft.Column(
             expand=True,
-            spacing=12,
-            controls=[self.menu, self.boton_pagar_ahora],
+            spacing=8,
+            controls=[
+                ft.Row(
+                    [self.btn_combinar_vendedor],
+                    alignment=ft.MainAxisAlignment.END,
+                ),
+                self.menu,
+                self.boton_pagar_ahora,
+            ],
         )
         self.seccion_pedidos = ft.Container(
             padding=14,
@@ -515,6 +531,20 @@ class VendedorView(ft.Column):
         ]
         self.actualizar_resumen_pago()
         self.cargar_pedidos(None)
+
+    def abrir_combinador_vendedor(self, e=None):
+        try:
+            pagina = self.page
+        except RuntimeError:
+            pagina = None
+        if pagina is None:
+            return
+
+        def al_agregar(combo):
+            self.menu.agregar_producto_combinado(combo)
+            self.actualizar_total()
+
+        abrir_modal_combinar_pizza(pagina, self.es_movil, al_agregar)
 
     def crear_boton_accion_pago(self, titulo, subtitulo, accion):
         self.total_accion_pago = ft.Text(
@@ -1667,6 +1697,7 @@ class VendedorView(ft.Column):
             "items": [
                 {
                     "producto_id": ids_por_nombre[item["nombre"]],
+                    "nombre_pizza": item["nombre"],
                     "cantidad": item["cantidad"],
                 }
                 for item in items

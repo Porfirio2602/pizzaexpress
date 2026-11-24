@@ -7,7 +7,13 @@ from components.pizzas_combinadas import (
 
 
 class MenuView(ft.Column):
-    def __init__(self, on_cart_change=None, es_movil=False, mostrar_combinador=True):
+    def __init__(
+        self,
+        on_cart_change=None,
+        es_movil=False,
+        mostrar_combinador=True,
+        categoria_inicial="Todas",
+    ):
         super().__init__()
         self.on_cart_change = on_cart_change
         self.es_movil = es_movil
@@ -15,7 +21,7 @@ class MenuView(ft.Column):
         self.expand = True
         self.spacing = 10
 
-        self.categoria_seleccionada = "Todas"
+        self.categoria_seleccionada = categoria_inicial or "Todas"
         self.productos_activos = set()
         self.mapa_disponibilidad = obtener_mapa_disponibilidad()
 
@@ -114,7 +120,8 @@ class MenuView(ft.Column):
             bgcolor="#6A0404",
             color=ft.Colors.WHITE,
             height=40,
-            visible=self.mostrar_combinador,
+            visible=self.mostrar_combinador
+            and self.categoria_seleccionada in ("Todas", "Pizzas"),
             on_click=self.abrir_combinador_usuario,
         )
         self.lista_productos_column = ft.Column(spacing=10)
