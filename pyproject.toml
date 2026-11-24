@@ -1,0 +1,10 @@
+[tool.flet]
+permissions = ["camera"]
+
+[tool.flet.android]
+dependencies = [
+    "flet==1.0.5",
+    "requests",
+    "flet-camera==1.0.5",
+    "flet-permission-handler==1.0.5",
+]

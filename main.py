@@ -2,8 +2,6 @@ import flet as ft
 import asyncio
 import os
 import json
-import sqlite3
-from pizza_express import inicializar_base_datos
 from components.menu_lateral import MenuLateral
 from views.inicio_view import InicioView
 from views.login_view import LoginView
@@ -129,17 +127,6 @@ def main(page: ft.Page):
 
     async def iniciar_aplicacion():
         await asyncio.sleep(0.8)
-        try:
-            await asyncio.to_thread(inicializar_base_datos)
-        except (sqlite3.Error, OSError):
-            progreso.visible = False
-            estado.value = (
-                "No se pudo iniciar la aplicación. "
-                "Revisa el almacenamiento e inténtalo de nuevo."
-            )
-            page.update()
-            return
-
         page.clean()
         construir_aplicacion(page)
 
@@ -170,10 +157,14 @@ def construir_aplicacion(page: ft.Page):
     page.padding = 0 if es_movil else 16
     page.spacing = 0
 
+    acciones_encabezado: ft.Row | None = None
+
     def actualizar_visibilidad_navegacion(visible):
         page.navigation_bar.visible = visible and not es_escritorio
         if nav_rail is not None:
             nav_rail.visible = visible and es_escritorio
+        if acciones_encabezado is not None:
+            acciones_encabezado.visible = visible
 
     def actualizar_indice_navegacion(indice):
         page.navigation_bar.selected_index = indice
@@ -196,6 +187,7 @@ def construir_aplicacion(page: ft.Page):
         }
     personal_actual = cargar_sesion_personal()
     indice_ventana_actual = [0]
+    modalidad_entrega = ["A Domicilio"]
 
     # Transición profesional con AnimatedSwitcher corregida
     contenido_principal = ft.AnimatedSwitcher(
@@ -209,14 +201,6 @@ def construir_aplicacion(page: ft.Page):
     )
     
     contenedor_comprar = ft.Container()
-
-    # EL TÍTULO DE LA BARRA SE QUEDA FIJO SIEMPRE
-    txt_titulo_app = ft.Text(
-        "PIZZA EXPRESS",
-        size=18,
-        weight="bold",
-        color=ft.Colors.WHITE,
-    )
 
     def cerrar_drawer(e=None):
         menu_lateral.visible = False
@@ -378,24 +362,13 @@ def construir_aplicacion(page: ft.Page):
 
     def regresar_inicio_general():
         menu_view_instancia.limpiar_carrito()
+        actualizar_encabezado_carrito()
         actualizar_visibilidad_navegacion(True)
         actualizar_indice_navegacion(0)
         indice_ventana_actual[0] = 0
         contenido_principal.content = inicio_view_instancia
         contenedor_comprar.content = btn_comprar
         page.update()
-
-    barra_superior = ft.Container(
-        content=ft.Row(
-            controls=[
-                ft.IconButton(icon=ft.Icons.MENU, icon_color=ft.Colors.WHITE, on_click=abrir_drawer),
-                txt_titulo_app,
-                ft.Container(width=40),
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-        ),
-        bgcolor="#6A0404", padding=15
-    )
 
     # Instancia del menú aceptando la categoría
     menu_view_instancia = MenuView(
@@ -524,13 +497,16 @@ def construir_aplicacion(page: ft.Page):
             return
 
         actualizar_visibilidad_navegacion(False)
-        contenido_principal.content = SolicitudDatosView(
+        vista_solicitud = SolicitudDatosView(
             items_estado=items,
             on_regresar=lambda: regresar_a_menu_carrito(),
             on_continuar_pago=lambda datos_ped: ir_a_pago(datos_ped, items),
             es_movil=es_movil,
         )
+        contenido_principal.content = vista_solicitud
         btn_comprar.visible = False
+        page.update()
+        vista_solicitud.seleccionar_metodo(modalidad_entrega[0] == "A Domicilio")
         page.update()
 
     def regresar_a_menu_carrito():
@@ -571,6 +547,7 @@ def construir_aplicacion(page: ft.Page):
 
     def finalizar_todo_exito():
         menu_view_instancia.limpiar_carrito()
+        actualizar_encabezado_carrito()
         actualizar_visibilidad_navegacion(True)
         actualizar_indice_navegacion(2)
         indice_ventana_actual[0] = 2
@@ -670,6 +647,7 @@ def construir_aplicacion(page: ft.Page):
     page.update()
 
     def verificar_estado_compra():
+        actualizar_encabezado_carrito()
         if page.navigation_bar.selected_index == 1:
             items = menu_view_instancia.obtener_items_estado()
             hay_seleccion = any(item["cantidad"] > 0 for item in items)
@@ -684,6 +662,387 @@ def construir_aplicacion(page: ft.Page):
             
         if btn_comprar.page is not None:
             btn_comprar.update()
+
+    def actualizar_encabezado_carrito():
+        cantidad = sum(
+            item["cantidad"]
+            for item in menu_view_instancia.obtener_items_estado()
+        )
+        lbl_cantidad_carrito.value = str(cantidad) if cantidad < 100 else "99+"
+        try:
+            if lbl_cantidad_carrito.page is not None:
+                lbl_cantidad_carrito.update()
+        except RuntimeError:
+            return
+
+    def mostrar_carrito(e=None):
+        dialogo = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Tu carrito", color="#6A0404"),
+            content=ft.Container(width=440 if es_escritorio else 310),
+            actions=[
+                ft.TextButton(
+                    "Seguir comprando",
+                    style=ft.ButtonStyle(color="#6A0404"),
+                    on_click=lambda e: page.pop_dialog(),
+                ),
+                ft.FilledButton(
+                    "Continuar compra",
+                    bgcolor="#6A0404",
+                    color=ft.Colors.WHITE,
+                    on_click=lambda e: (
+                        page.pop_dialog(),
+                        realizar_compra(None),
+                    ),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.CENTER,
+        )
+
+        def actualizar_contenido_carrito():
+            controles = []
+            total = 0.0
+            for producto in menu_view_instancia.productos:
+                estado = menu_view_instancia.estado_carrito[producto["id"]]
+                cantidad = estado["cantidad"]
+                if cantidad <= 0:
+                    continue
+                subtotal = cantidad * estado["precio"]
+                total += subtotal
+
+                def eliminar_producto(producto_id=producto["id"]):
+                    menu_view_instancia.estado_carrito[producto_id]["cantidad"] = 0
+                    menu_view_instancia.productos_activos.discard(producto_id)
+                    menu_view_instancia.construir_catalogo()
+                    menu_view_instancia.actualizar_si_montado(
+                        menu_view_instancia.lista_productos_column
+                    )
+                    verificar_estado_compra()
+                    actualizar_contenido_carrito()
+
+                controles.append(
+                    ft.Container(
+                        padding=12,
+                        border=ft.Border.all(1, "#F0D8CA"),
+                        border_radius=14,
+                        content=ft.Row(
+                            controls=[
+                                ft.Column(
+                                    controls=[
+                                        ft.Text(
+                                            producto["nombre"],
+                                            weight=ft.FontWeight.BOLD,
+                                            color="#3D2520",
+                                            max_lines=1,
+                                            overflow=ft.TextOverflow.ELLIPSIS,
+                                        ),
+                                        ft.Text(
+                                            f"{cantidad} × "
+                                            f"${estado['precio']:.2f}  ·  "
+                                            f"${subtotal:.2f}",
+                                            size=13,
+                                            color="#806B63",
+                                        ),
+                                    ],
+                                    spacing=4,
+                                    expand=True,
+                                ),
+                                ft.IconButton(
+                                    icon=ft.Icons.DELETE_OUTLINE,
+                                    icon_color="#6A0404",
+                                    tooltip="Eliminar producto del carrito",
+                                    on_click=lambda e, quitar=eliminar_producto: quitar(),
+                                ),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    )
+                )
+
+            if not controles:
+                controles.append(
+                    ft.Container(
+                        padding=20,
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Text(
+                            "Tu carrito está vacío. Agrega productos desde el menú.",
+                            color="#806B63",
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    )
+                )
+            else:
+                controles.append(
+                    ft.Row(
+                        controls=[
+                            ft.Text("Total", weight=ft.FontWeight.BOLD, size=16),
+                            ft.Text(
+                                f"${total:.2f}",
+                                weight=ft.FontWeight.BOLD,
+                                size=18,
+                                color="#6A0404",
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    )
+                )
+
+            dialogo.content = ft.Container(
+                width=440 if es_escritorio else 310,
+                content=ft.Column(
+                    controls=controles,
+                    spacing=10,
+                    tight=True,
+                    scroll=ft.ScrollMode.AUTO,
+                ),
+            )
+            try:
+                if dialogo.page is not None:
+                    dialogo.update()
+            except RuntimeError:
+                return
+
+        actualizar_contenido_carrito()
+        page.show_dialog(dialogo)
+
+    def cerrar_sesion_desde_cuenta(e):
+        page.pop_dialog()
+        cerrar_sesion()
+
+    def mostrar_mi_cuenta(e=None):
+        if not usuario_actual.get("id"):
+            ir_a_login()
+            return
+
+        nombre = " ".join(
+            parte
+            for parte in (
+                usuario_actual.get("nombre"),
+                usuario_actual.get("apellido"),
+            )
+            if parte
+        )
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Mi cuenta", color="#6A0404"),
+                content=ft.Column(
+                    controls=[
+                        ft.Icon(
+                            ft.Icons.ACCOUNT_CIRCLE,
+                            size=58,
+                            color="#6A0404",
+                        ),
+                        ft.Text(
+                            nombre or "Sesión iniciada",
+                            size=17,
+                            weight=ft.FontWeight.BOLD,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    tight=True,
+                ),
+                actions=[
+                    ft.TextButton(
+                        "Cerrar",
+                        style=ft.ButtonStyle(color="#6A0404"),
+                        on_click=lambda e: page.pop_dialog(),
+                    ),
+                    ft.TextButton(
+                        "Cerrar sesión",
+                        style=ft.ButtonStyle(color="#6A0404"),
+                        on_click=cerrar_sesion_desde_cuenta,
+                    ),
+                ],
+                actions_alignment=ft.MainAxisAlignment.CENTER,
+            )
+        )
+
+    lbl_cantidad_carrito = ft.Text(
+        "0",
+        size=12,
+        weight=ft.FontWeight.BOLD,
+        color="#6A0404",
+        text_align=ft.TextAlign.CENTER,
+    )
+    boton_carrito_encabezado = ft.Container(
+        content=ft.Row(
+            controls=[
+                ft.Icon(
+                    ft.Icons.SHOPPING_BAG_OUTLINED,
+                    color=ft.Colors.WHITE,
+                    size=23,
+                ),
+                ft.Container(
+                    content=lbl_cantidad_carrito,
+                    width=24,
+                    height=24,
+                    alignment=ft.Alignment.CENTER,
+                    bgcolor="#F4C95D",
+                    border_radius=12,
+                ),
+            ],
+            spacing=5,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=8,
+        border_radius=14,
+        tooltip="Ver carrito",
+        on_click=mostrar_carrito,
+    )
+    acciones_encabezado = ft.Row(
+        controls=[
+            boton_carrito_encabezado,
+            ft.IconButton(
+                icon=ft.Icons.ACCOUNT_CIRCLE_OUTLINED,
+                icon_color=ft.Colors.WHITE,
+                icon_size=26,
+                tooltip="Mi cuenta",
+                on_click=mostrar_mi_cuenta,
+            ),
+        ],
+        spacing=4,
+        tight=True,
+    )
+
+    def actualizar_selector_entrega():
+        opciones = [
+            ("A Domicilio", ft.Icons.LOCAL_SHIPPING_OUTLINED, "A domicilio"),
+            ("En Tienda", ft.Icons.STORE_MALL_DIRECTORY, "Recoger"),
+        ]
+        controles = []
+        for valor, icono, texto in opciones:
+            activo = modalidad_entrega[0] == valor
+            color_contenido = "#550707" if activo else ft.Colors.WHITE
+            etiqueta = (
+                texto
+                if es_movil
+                else (
+                    "A domicilio"
+                    if valor == "A Domicilio"
+                    else "Recoger en tienda"
+                )
+            )
+            controles.append(
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(
+                                icono,
+                                size=17 if es_movil else 15,
+                                color=color_contenido,
+                            ),
+                            ft.Text(
+                                etiqueta,
+                                size=9 if es_movil else 12,
+                                weight=ft.FontWeight.BOLD,
+                                color=color_contenido,
+                            ),
+                        ],
+                        spacing=4 if es_movil else 6,
+                        tight=True,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding(
+                        left=7 if es_movil else 10,
+                        top=7,
+                        right=7 if es_movil else 10,
+                        bottom=7,
+                    ),
+                    border_radius=12,
+                    bgcolor="#F4C95D" if activo else "#6A0404",
+                    border=ft.Border.all(
+                        1,
+                        "#F4C95D"
+                        if activo
+                        else ft.Colors.with_opacity(0.35, ft.Colors.WHITE),
+                    ),
+                    on_click=lambda e, seleccion=valor: seleccionar_modalidad_entrega(
+                        seleccion
+                    ),
+                    tooltip=(
+                        "A domicilio"
+                        if valor == "A Domicilio"
+                        else "Recoger en tienda"
+                    ),
+                )
+            )
+        selector_entrega.controls = controles
+        try:
+            if selector_entrega.page is not None:
+                selector_entrega.update()
+        except RuntimeError:
+            return
+
+    def seleccionar_modalidad_entrega(modalidad):
+        modalidad_entrega[0] = modalidad
+        actualizar_selector_entrega()
+
+    selector_entrega = ft.Row(
+        spacing=2 if es_movil else 4,
+        tight=True,
+        alignment=ft.MainAxisAlignment.CENTER,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+    )
+    actualizar_selector_entrega()
+
+    barra_superior = ft.Container(
+        content=ft.Row(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.IconButton(
+                            icon=ft.Icons.MENU,
+                            icon_color=ft.Colors.WHITE,
+                            tooltip="Abrir menú",
+                            on_click=abrir_drawer,
+                        ),
+                        ft.Icon(
+                            ft.Icons.LOCAL_PIZZA_ROUNDED,
+                            color="#F4C95D",
+                            size=25,
+                        ),
+                        ft.Text(
+                            "PizzaExpress",
+                            size=20 if es_escritorio else 18,
+                            weight=ft.FontWeight.BOLD,
+                            color=ft.Colors.WHITE,
+                        ),
+                    ],
+                    spacing=5,
+                    tight=True,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(
+                    content=selector_entrega,
+                    expand=True,
+                    alignment=ft.Alignment.CENTER,
+                ),
+                acciones_encabezado,
+            ],
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        gradient=ft.LinearGradient(
+            begin=ft.Alignment.TOP_LEFT,
+            end=ft.Alignment.BOTTOM_RIGHT,
+            colors=["#7A0C0C", "#550707"],
+        ),
+        shadow=ft.BoxShadow(
+            blur_radius=10,
+            color=ft.Colors.with_opacity(0.18, ft.Colors.BLACK),
+            offset=ft.Offset(0, 3),
+        ),
+        padding=ft.Padding(
+            left=8 if es_movil else 16,
+            top=6 if es_movil else 9,
+            right=8 if es_movil else 16,
+            bottom=6 if es_movil else 9,
+        ),
+    )
+    actualizar_encabezado_carrito()
 
     def mostrar_ventana(indice):
         indice_ventana_actual[0] = indice

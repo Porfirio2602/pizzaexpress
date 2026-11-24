@@ -39,8 +39,12 @@ def _codificar_code128(codigo_pedido):
         raise ValueError("Code 128 solo admite caracteres ASCII imprimibles.")
 
     palabras_codigo = [104, *(ord(caracter) - 32 for caracter in codigo_pedido)]
-    checksum = sum(
-        indice * palabra for indice, palabra in enumerate(palabras_codigo)
+    checksum = (
+        palabras_codigo[0]
+        + sum(
+            indice * palabra
+            for indice, palabra in enumerate(palabras_codigo[1:], start=1)
+        )
     ) % 103
     return (
         "".join(_PATRONES_CODE128[palabra] for palabra in palabras_codigo)

@@ -3,6 +3,8 @@ import re
 
 import requests
 import flet as ft
+import flet_camera as fc
+import flet_permission_handler as fph
 from config import BASE_URL
 from views.menu_view import MenuView
 
@@ -33,6 +35,7 @@ class VendedorView(ft.Column):
         self.lbl_estado_entrega = ft.Text("", size=15, color="#6A0404")
         self.lista_pedidos = ft.Column(spacing=8)
         self.detalle_pedido_entrega = ft.Column(spacing=8)
+        self.pedido_entrega_actual = None
         self.codigo_pedido_encontrado = None
         self.id_pedido_encontrado = None
         self.txt_codigo_pedido = ft.TextField(
@@ -45,6 +48,18 @@ class VendedorView(ft.Column):
             border_radius=12,
             filled=True,
             fill_color=ft.Colors.WHITE,
+        )
+        self.lbl_estado_escaner = ft.Text("", size=14, color="#6A0404")
+        self.camara_entrega = None
+        self.dialogo_escaner = None
+        self._escaneo_en_proceso = False
+        self.boton_abrir_escaner = ft.FilledButton(
+            "Leer con cámara",
+            icon=ft.Icons.PHOTO_CAMERA,
+            bgcolor="#6A0404",
+            color=ft.Colors.WHITE,
+            on_click=self.abrir_escaner_camara,
+            visible=es_movil,
         )
         self.menu = MenuView(
             on_cart_change=self.actualizar_total,
@@ -369,6 +384,8 @@ class VendedorView(ft.Column):
                         spacing=10,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
+                    self.detalle_pedido_entrega,
+                    self.boton_abrir_escaner,
                     ft.Text(
                         "Los lectores USB/Bluetooth que escriben el código "
                         "y envían Enter son compatibles.",
@@ -376,7 +393,6 @@ class VendedorView(ft.Column):
                         color="#806B63",
                     ),
                     self.lbl_estado_entrega,
-                    self.detalle_pedido_entrega,
                 ],
             ),
         )
@@ -813,11 +829,12 @@ class VendedorView(ft.Column):
     def buscar_pedido_por_codigo(self, e):
         codigo = (self.txt_codigo_pedido.value or "").strip().upper()
         self.lbl_estado_entrega.value = ""
+        self.pedido_entrega_actual = None
         self.codigo_pedido_encontrado = None
         self.id_pedido_encontrado = None
+        self.detalle_pedido_entrega.controls = []
         if not codigo:
             self.lbl_estado_entrega.value = "Escanea o escribe el código del pedido."
-            self.detalle_pedido_entrega.controls = []
             self.actualizar_estado_entrega()
             return
 
@@ -826,7 +843,6 @@ class VendedorView(ft.Column):
                 f"{BASE_URL}/api/personal/pedidos/codigo/{codigo}",
                 headers={
                     "Authorization": f"Bearer {self.personal['token']}",
-                    "ngrok-skip-browser-warning": "true",
                 },
                 timeout=15,
             )
@@ -843,10 +859,9 @@ class VendedorView(ft.Column):
                 self.mostrar_detalle_pedido_entrega(pedido)
                 return
             self.lbl_estado_entrega.value = (
-                "No se encontró el pedido. El servidor puede no tener activa "
-                "la búsqueda global; reinicia server.py y verifica la base de datos."
+                "No se encontró el pedido. Verifica el código y que el servidor "
+                "tenga disponible la búsqueda de pedidos."
             )
-            self.detalle_pedido_entrega.controls = []
             self.actualizar_estado_entrega()
             return
         if respuesta.status_code != 200:
@@ -859,11 +874,16 @@ class VendedorView(ft.Column):
                 if isinstance(detalle, str)
                 else "No se pudo consultar el pedido."
             )
-            self.detalle_pedido_entrega.controls = []
             self.actualizar_estado_entrega()
             return
 
         pedido = respuesta.json()
+        if not isinstance(pedido, dict) or not pedido.get("codigo"):
+            self.lbl_estado_entrega.value = (
+                "El servidor devolvió datos de pedido inválidos."
+            )
+            self.actualizar_estado_entrega()
+            return
         self.codigo_pedido_encontrado = pedido["codigo"]
         self.id_pedido_encontrado = pedido.get("id_pedido")
         self.mostrar_detalle_pedido_entrega(pedido)
@@ -875,7 +895,6 @@ class VendedorView(ft.Column):
                 f"{BASE_URL}/api/personal/pedidos",
                 headers={
                     "Authorization": f"Bearer {self.personal['token']}",
-                    "ngrok-skip-browser-warning": "true",
                 },
                 timeout=15,
             )
@@ -893,6 +912,7 @@ class VendedorView(ft.Column):
         return None
 
     def mostrar_detalle_pedido_entrega(self, pedido):
+        self.pedido_entrega_actual = pedido
         estado = pedido["estado"]
         articulo_textos = [
             f"{item['cantidad']} × {item['nombre_pizza']}"
@@ -1008,7 +1028,6 @@ class VendedorView(ft.Column):
                 f"{self.codigo_pedido_encontrado}/entregar",
                 headers={
                     "Authorization": f"Bearer {self.personal['token']}",
-                    "ngrok-skip-browser-warning": "true",
                 },
                 timeout=15,
             )
@@ -1025,7 +1044,6 @@ class VendedorView(ft.Column):
                     json={"estado": "Finalizada"},
                     headers={
                         "Authorization": f"Bearer {self.personal['token']}",
-                        "ngrok-skip-browser-warning": "true",
                     },
                     timeout=15,
                 )
@@ -1060,6 +1078,203 @@ class VendedorView(ft.Column):
                 self.detalle_pedido_entrega.update()
         except RuntimeError:
             return
+
+    async def abrir_escaner_camara(self, e):
+        if not self.es_movil:
+            return
+
+        try:
+            permiso = await fph.PermissionHandler().request(fph.Permission.CAMERA)
+        except RuntimeError:
+            self.lbl_estado_entrega.value = (
+                "No se pudo solicitar permiso para usar la cámara."
+            )
+            self.actualizar_estado_entrega()
+            return
+
+        if permiso is None or permiso.name != "GRANTED":
+            self.lbl_estado_entrega.value = (
+                "Permite el acceso a la cámara para leer el código del pedido."
+            )
+            self.actualizar_estado_entrega()
+            return
+
+        self.lbl_estado_escaner.value = "Preparando la cámara..."
+        self.camara_entrega = fc.Camera(
+            width=320,
+            height=300,
+            preview_enabled=True,
+            content=ft.Container(
+                alignment=ft.Alignment.CENTER,
+                content=ft.Container(
+                    width=280,
+                    height=100,
+                    border=ft.Border(
+                        top=ft.BorderSide(2, ft.Colors.WHITE),
+                        bottom=ft.BorderSide(2, ft.Colors.WHITE),
+                        left=ft.BorderSide(2, ft.Colors.WHITE),
+                        right=ft.BorderSide(2, ft.Colors.WHITE),
+                    ),
+                    border_radius=12,
+                ),
+            ),
+        )
+        self.dialogo_escaner = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Escanear pedido", color="#6A0404"),
+            content=ft.Container(
+                width=320,
+                content=ft.Column(
+                    tight=True,
+                    controls=[
+                        self.camara_entrega,
+                        self.lbl_estado_escaner,
+                        ft.Text(
+                            "Acerca el código hasta que ocupe casi todo el marco. "
+                            "Enfoca, evita reflejos y mantén el teléfono quieto.",
+                            size=12,
+                            color="#806B63",
+                        ),
+                    ],
+                ),
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancelar",
+                    on_click=self.cerrar_escaner_camara,
+                ),
+                ft.FilledButton(
+                    "Capturar y buscar",
+                    icon=ft.Icons.QR_CODE_SCANNER,
+                    bgcolor="#6A0404",
+                    color=ft.Colors.WHITE,
+                    on_click=self.capturar_codigo_pedido,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.show_dialog(self.dialogo_escaner)
+
+        camara = self.camara_entrega
+        try:
+            camaras = await camara.get_available_cameras()
+            if self.dialogo_escaner is None:
+                return
+            if not camaras:
+                self.lbl_estado_escaner.value = "No se encontró una cámara disponible."
+                self.dialogo_escaner.update()
+                return
+
+            camara_trasera = next(
+                (
+                    camara
+                    for camara in camaras
+                    if camara.lens_direction.value.casefold() == "back"
+                ),
+                camaras[0],
+            )
+            await camara.initialize(
+                description=camara_trasera,
+                resolution_preset=fc.ResolutionPreset.HIGH,
+                enable_audio=False,
+                image_format_group=fc.ImageFormatGroup.JPEG,
+            )
+            await camara.set_focus_mode(fc.FocusMode.AUTO)
+            if self.dialogo_escaner is None:
+                return
+            self.lbl_estado_escaner.value = (
+                "Alinea las barras dentro del marco blanco."
+            )
+            self.dialogo_escaner.update()
+        except RuntimeError:
+            if self.dialogo_escaner is None:
+                return
+            self.lbl_estado_escaner.value = (
+                "No se pudo iniciar la cámara. Verifica los permisos del dispositivo."
+            )
+            self.dialogo_escaner.update()
+
+    def cerrar_escaner_camara(self, e):
+        self.camara_entrega = None
+        self.dialogo_escaner = None
+        self._escaneo_en_proceso = False
+        self.page.pop_dialog()
+
+    async def capturar_codigo_pedido(self, e):
+        camara = self.camara_entrega
+        dialogo = self.dialogo_escaner
+        if camara is None or dialogo is None or self._escaneo_en_proceso:
+            return
+
+        self._escaneo_en_proceso = True
+        self.lbl_estado_escaner.value = "Leyendo el código..."
+        dialogo.update()
+        try:
+            captura = await camara.take_picture()
+        except RuntimeError:
+            if self.dialogo_escaner is None:
+                return
+            self._escaneo_en_proceso = False
+            self.lbl_estado_escaner.value = "No se pudo tomar la captura."
+            dialogo.update()
+            return
+
+        try:
+            respuesta = await asyncio.to_thread(
+                requests.post,
+                f"{BASE_URL}/api/personal/pedidos/leer-codigo",
+                data=captura,
+                headers={
+                    "Authorization": f"Bearer {self.personal['token']}",
+                    "Content-Type": "image/jpeg",
+                },
+                timeout=20,
+            )
+        except requests.RequestException:
+            if self.dialogo_escaner is None:
+                return
+            self._escaneo_en_proceso = False
+            self.lbl_estado_escaner.value = "No se pudo conectar con el servidor."
+            dialogo.update()
+            return
+
+        if self.dialogo_escaner is None:
+            return
+
+        self._escaneo_en_proceso = False
+        if respuesta.status_code == 404:
+            self.lbl_estado_escaner.value = (
+                "El servidor aún no tiene activa la lectura por cámara. "
+                "Actualiza server.py y reinicia el backend."
+            )
+            dialogo.update()
+            return
+
+        if respuesta.status_code != 200:
+            try:
+                detalle = respuesta.json().get("detail")
+            except ValueError:
+                detalle = None
+            self.lbl_estado_escaner.value = (
+                detalle
+                if isinstance(detalle, str)
+                else "No se detectó el código. Intenta centrarlo y vuelve a capturar."
+            )
+            dialogo.update()
+            return
+
+        try:
+            codigo = respuesta.json().get("codigo")
+        except ValueError:
+            codigo = None
+        if not isinstance(codigo, str):
+            self.lbl_estado_escaner.value = "El servidor devolvió un código inválido."
+            dialogo.update()
+            return
+
+        self.txt_codigo_pedido.value = codigo
+        self.cerrar_escaner_camara(None)
+        self.buscar_pedido_por_codigo(None)
 
     def did_mount(self):
         self._actualizacion_activa = True

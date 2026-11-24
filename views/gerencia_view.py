@@ -4,6 +4,7 @@ from datetime import datetime
 import requests
 import flet as ft
 from config import BASE_URL
+from components.validaciones import requisitos_contrasena_pendientes
 
 
 class GerenciaView(ft.Column):
@@ -100,7 +101,7 @@ class GerenciaView(ft.Column):
             fill_color=ft.Colors.WHITE,
         )
         self.txt_contrasena = ft.TextField(
-            label="Contraseña temporal (12+ caracteres)",
+            label="Contraseña temporal (mínimo 8 caracteres)",
             password=True,
             can_reveal_password=True,
         )
@@ -910,16 +911,10 @@ class GerenciaView(ft.Column):
         if len(telefono) != 10 or not telefono.isdigit():
             self.mostrar_error("El teléfono debe contener exactamente 10 dígitos.")
             return
-        if (
-            len(contrasena) < 12
-            or not any(caracter.isupper() for caracter in contrasena)
-            or not any(caracter.islower() for caracter in contrasena)
-            or not any(caracter.isdigit() for caracter in contrasena)
-            or not any(not caracter.isalnum() for caracter in contrasena)
-        ):
+        if requisitos_contrasena_pendientes(contrasena):
             self.mostrar_error(
-                "La contraseña debe tener al menos 12 caracteres e incluir "
-                "mayúscula, minúscula, número y símbolo."
+                "La contraseña debe tener al menos 8 caracteres e incluir "
+                "una mayúscula, una minúscula, un número y un símbolo."
             )
             return
         try:
@@ -1013,8 +1008,8 @@ class GerenciaView(ft.Column):
             ]
             if errores_contrasena:
                 mensaje = (
-                    "La contraseña debe tener al menos 12 caracteres e incluir "
-                    "mayúscula, minúscula, número y símbolo."
+                    "La contraseña debe tener al menos 8 caracteres e incluir "
+                    "una mayúscula, una minúscula, un número y un símbolo."
                 )
             else:
                 mensajes = [

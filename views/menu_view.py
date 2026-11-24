@@ -76,21 +76,43 @@ class MenuView(ft.Container):
 
     def crear_boton_categoria(self, nombre_cat):
         activo = self.categoria_actual == nombre_cat
+        iconos = {
+            "Pizzas": ft.Icons.LOCAL_PIZZA_ROUNDED,
+            "Bebidas": ft.Icons.LOCAL_DRINK_ROUNDED,
+            "Extras": ft.Icons.FASTFOOD_ROUNDED,
+        }
         return ft.Container(
-            content=ft.Text(
-                nombre_cat,
-                weight=ft.FontWeight.BOLD if activo else ft.FontWeight.W_500,
-                color=ft.Colors.WHITE if activo else "#6A0404",
-                size=16,
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        iconos[nombre_cat],
+                        size=19,
+                        color=ft.Colors.WHITE if activo else "#6A0404",
+                    ),
+                    ft.Text(
+                        nombre_cat,
+                        weight=ft.FontWeight.BOLD if activo else ft.FontWeight.W_500,
+                        color=ft.Colors.WHITE if activo else "#6A0404",
+                        size=16,
+                    ),
+                ],
+                spacing=8,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding(left=18, top=9, right=18, bottom=9),
-            bgcolor="#6A0404" if activo else "#FFF1E7",
-            border_radius=22,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#6A0404" if activo else "#F0D8CA"),
-                bottom=ft.BorderSide(1, "#6A0404" if activo else "#F0D8CA"),
-                left=ft.BorderSide(1, "#6A0404" if activo else "#F0D8CA"),
-                right=ft.BorderSide(1, "#6A0404" if activo else "#F0D8CA"),
+            padding=ft.Padding(left=17, top=10, right=17, bottom=10),
+            bgcolor="#6A0404" if activo else ft.Colors.WHITE,
+            border_radius=14,
+            border=ft.Border.all(1, "#6A0404" if activo else ft.Colors.WHITE),
+            shadow=(
+                ft.BoxShadow(
+                    blur_radius=12,
+                    spread_radius=1,
+                    color=ft.Colors.with_opacity(0.2, "#6A0404"),
+                    offset=ft.Offset(0, 3),
+                )
+                if activo
+                else None
             ),
             on_click=lambda e: self.cambiar_categoria(nombre_cat)
         )
@@ -132,24 +154,22 @@ class MenuView(ft.Container):
                 color="#6A0404",
                 visible=prod_id in self.productos_activos,
             )
-            badge_cantidad = ft.Container(
-                content=txt_cantidad,
-                width=34,
-                height=30,
-                alignment=ft.Alignment.CENTER,
-                bgcolor="#FFF1E7",
-                border_radius=10,
-            )
-            controles_cantidad = ft.Row(
-                spacing=0,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controles_cantidad = ft.Container(
+                padding=3,
+                bgcolor=ft.Colors.WHITE,
+                border=ft.Border.all(1, "#E6C7CC"),
+                border_radius=12,
                 visible=prod_id in self.productos_activos,
+                content=ft.Row(
+                    spacing=2,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
             )
             boton_agregar = ft.IconButton(
                 icon=ft.Icons.ADD,
-                icon_color="#6A0404",
+                icon_color=ft.Colors.WHITE,
                 icon_size=20,
-                bgcolor="#FEEFE5",
+                bgcolor="#6A0404",
                 width=40,
                 height=40,
                 padding=8,
@@ -167,42 +187,43 @@ class MenuView(ft.Container):
                 visible=prod_id not in self.productos_activos,
             )
             boton_menos = ft.IconButton(
-                icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
-                icon_color=ft.Colors.GREY_600,
+                icon=ft.Icons.REMOVE,
+                icon_color=ft.Colors.WHITE,
                 icon_size=19,
-                width=36,
-                height=36,
-                padding=6,
-                bgcolor=ft.Colors.GREY_100,
+                width=34,
+                height=34,
+                padding=5,
+                bgcolor="#6A0404",
                 style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=11),
-                ),
-                visual_density=ft.VisualDensity.COMPACT,
-                size_constraints=ft.BoxConstraints(
-                    min_width=36,
-                    max_width=36,
-                    min_height=36,
-                    max_height=36,
-                ),
-            )
-            boton_mas = ft.IconButton(
-                icon=ft.Icons.ADD,
-                icon_color="#6A0404",
-                icon_size=20,
-                bgcolor="#FEEFE5",
-                width=40,
-                height=40,
-                padding=8,
-                style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=12),
+                    shape=ft.RoundedRectangleBorder(radius=10),
                     overlay_color=ft.Colors.with_opacity(0.12, "#6A0404"),
                 ),
                 visual_density=ft.VisualDensity.COMPACT,
                 size_constraints=ft.BoxConstraints(
-                    min_width=40,
-                    max_width=40,
-                    min_height=40,
-                    max_height=40,
+                    min_width=34,
+                    max_width=34,
+                    min_height=34,
+                    max_height=34,
+                ),
+            )
+            boton_mas = ft.IconButton(
+                icon=ft.Icons.ADD,
+                icon_color=ft.Colors.WHITE,
+                icon_size=19,
+                width=34,
+                height=34,
+                padding=5,
+                bgcolor="#6A0404",
+                style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    overlay_color=ft.Colors.with_opacity(0.12, "#6A0404"),
+                ),
+                visual_density=ft.VisualDensity.COMPACT,
+                size_constraints=ft.BoxConstraints(
+                    min_width=34,
+                    max_width=34,
+                    min_height=34,
+                    max_height=34,
                 ),
             )
             boton_agregar.on_click = (
@@ -214,9 +235,14 @@ class MenuView(ft.Container):
                 self.decrementar_cantidad(pid, campo, fila, add)
             )
             boton_mas.on_click = boton_agregar.on_click
-            controles_cantidad.controls = [
+            controles_cantidad.content.controls = [
                 boton_menos,
-                badge_cantidad,
+                ft.Container(
+                    content=txt_cantidad,
+                    width=34,
+                    height=34,
+                    alignment=ft.Alignment.CENTER,
+                ),
                 boton_mas,
             ]
 
@@ -258,7 +284,7 @@ class MenuView(ft.Container):
                             ft.Row([
                                 boton_agregar,
                                 controles_cantidad,
-                            ], spacing=2, alignment=ft.MainAxisAlignment.END, tight=True)
+                            ], spacing=6, alignment=ft.MainAxisAlignment.END, tight=True)
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, expand=True)
                     ], expand=True, spacing=4)
                 ], alignment=ft.MainAxisAlignment.START, expand=True),
