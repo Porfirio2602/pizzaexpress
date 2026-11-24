@@ -1,8 +1,10 @@
+import asyncio
 import re
 
 import flet as ft
 import requests
 from config import BASE_URL
+
 
 class PagoView(ft.Column):
     def __init__(
@@ -23,6 +25,17 @@ class PagoView(ft.Column):
         self.on_cancelar = on_cancelar
         self.on_compra_finalizada = on_compra_finalizada
 
+        borde_campo = {
+            ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(1, "#E7C8B8"),
+            ),
+            ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(2, "#6A0404"),
+            ),
+        }
+
         tamano_texto = 13 if es_movil else 15
         alto_campo = 42 if es_movil else 52
         self.txt_tarjeta = ft.TextField(
@@ -35,6 +48,7 @@ class PagoView(ft.Column):
             height=alto_campo,
             content_padding=10 if es_movil else 12,
             expand=not es_movil,
+            border=borde_campo,
             on_change=self.formatear_numero_tarjeta,
         )
         self.txt_exp = ft.TextField(
@@ -47,27 +61,37 @@ class PagoView(ft.Column):
             height=alto_campo,
             content_padding=10 if es_movil else 12,
             expand=True,
+            border=borde_campo,
             on_change=self.formatear_vencimiento,
         )
-        self.txt_cvv = ft.TextField(label="CVV", text_size=13, height=42, content_padding=10, password=True, expand=True)
-        self.txt_cvv.keyboard_type = ft.KeyboardType.NUMBER
-        self.txt_cvv.input_filter = ft.InputFilter(
-            allow=True,
-            regex_string=r"[0-9]*",
+        self.txt_cvv = ft.TextField(
+            label="CVV",
+            text_size=13,
+            height=42,
+            content_padding=10,
+            password=True,
+            expand=True,
+            keyboard_type=ft.KeyboardType.NUMBER,
+            input_filter=ft.InputFilter(allow=True, regex_string=r"[0-9]*"),
+            max_length=4,
+            border=borde_campo,
         )
-        self.txt_cvv.max_length = 4
-        self.txt_nombre_titular = ft.TextField(label="Nombre del Titular", text_size=tamano_texto, height=alto_campo, content_padding=10 if es_movil else 12, expand=not es_movil)
-        self.lbl_error = ft.Text("", color=ft.Colors.RED_700, size=12, weight="bold")
+        self.txt_nombre_titular = ft.TextField(
+            label="Nombre del Titular",
+            text_size=tamano_texto,
+            height=alto_campo,
+            content_padding=10 if es_movil else 12,
+            expand=not es_movil,
+            border=borde_campo,
+        )
+        self.lbl_error = ft.Text(
+            "", color=ft.Colors.RED_700, size=12, weight="bold"
+        )
         self.info_pago = ft.Container(
             padding=12,
             bgcolor="#FFF8F2",
             border_radius=12,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#F0D8CA"),
-                bottom=ft.BorderSide(1, "#F0D8CA"),
-                left=ft.BorderSide(1, "#F0D8CA"),
-                right=ft.BorderSide(1, "#F0D8CA"),
-            ),
+            border=ft.Border.all(1, "#F0D8CA"),
             content=ft.Column(
                 spacing=8,
                 controls=[
@@ -119,9 +143,7 @@ class PagoView(ft.Column):
                 weight="bold",
             ),
             height=48,
-            style=ft.ButtonStyle(
-                side=ft.BorderSide(1, ft.Colors.RED_900)
-            ),
+            style=ft.ButtonStyle(side=ft.BorderSide(1, ft.Colors.RED_900)),
             on_click=lambda e: self.on_cancelar(),
         )
         self.btn_finalizar = ft.FilledButton(
@@ -151,17 +173,39 @@ class PagoView(ft.Column):
 
         self.controls = [
             ft.Container(
-                content=ft.Row([
-                    ft.TextButton(
-                        content=ft.Row([ft.Icon(ft.Icons.ARROW_BACK, size=16, color="#6A0404"), ft.Text("Volver", color="#6A0404", weight="bold")], spacing=2),
-                        on_click=lambda e: self.on_cancelar(),
-                        style=ft.ButtonStyle(padding=5)
-                    ),
-                    ft.Text("DATOS DE PAGO", size=14, weight="bold", color="#6A0404"),
-                    ft.Container(width=50)
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                content=ft.Row(
+                    [
+                        ft.TextButton(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(
+                                        ft.Icons.ARROW_BACK,
+                                        size=16,
+                                        color="#6A0404",
+                                    ),
+                                    ft.Text(
+                                        "Volver",
+                                        color="#6A0404",
+                                        weight="bold",
+                                    ),
+                                ],
+                                spacing=2,
+                            ),
+                            on_click=lambda e: self.on_cancelar(),
+                            style=ft.ButtonStyle(padding=5),
+                        ),
+                        ft.Text(
+                            "DATOS DE PAGO",
+                            size=14,
+                            weight="bold",
+                            color="#6A0404",
+                        ),
+                        ft.Container(width=50),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
                 padding=5,
-                bgcolor="#FEEFE5D8"
+                bgcolor="#FEEFE5D8",
             ),
             ft.Column(
                 expand=True,
@@ -234,7 +278,7 @@ class PagoView(ft.Column):
                         ],
                     )
                 ],
-            )
+            ),
         ]
         if es_movil:
             self.controls[1] = ft.Container(
@@ -314,8 +358,16 @@ class PagoView(ft.Column):
             campo.update()
 
     def finalizar_compra_bd(self, e):
-        if not self.usuario_actual.get("id") or not self.usuario_actual.get("token"):
-            self.lbl_error.value = "¡Debes iniciar sesión para finalizar la compra!"
+        if self.page is not None:
+            self.page.run_task(self._finalizar_compra_async, e)
+
+    async def _finalizar_compra_async(self, e):
+        if not self.usuario_actual.get("id") or not self.usuario_actual.get(
+            "token"
+        ):
+            self.lbl_error.value = (
+                "¡Debes iniciar sesión para finalizar la compra!"
+            )
             self.lbl_error.update()
             return
 
@@ -346,18 +398,25 @@ class PagoView(ft.Column):
             "total": self.datos_pedido["total"],
             "items": items,
         }
+        self.btn_finalizar.disabled = True
+        self.lbl_error.value = ""
+        self.update()
         try:
-            respuesta = requests.post(
+            respuesta = await asyncio.to_thread(
+                requests.post,
                 f"{BASE_URL}/api/pedidos",
                 json=payload,
                 headers={
                     "Authorization": f"Bearer {self.usuario_actual['token']}"
                 },
-                timeout=15,
+                timeout=25,
             )
+            self.btn_finalizar.disabled = False
             if respuesta.status_code == 401:
-                self.lbl_error.value = "Tu sesión expiró. Inicia sesión nuevamente."
-                self.lbl_error.update()
+                self.lbl_error.value = (
+                    "Tu sesión expiró. Inicia sesión nuevamente."
+                )
+                self.update()
                 return
             if respuesta.status_code == 422:
                 try:
@@ -383,15 +442,16 @@ class PagoView(ft.Column):
                     )
 
                 self.lbl_error.value = mensaje_error
-                self.lbl_error.update()
+                self.update()
                 return
             respuesta.raise_for_status()
         except requests.RequestException:
+            self.btn_finalizar.disabled = False
             self.lbl_error.value = (
                 "No se pudo guardar el pedido en el servidor. "
                 "Revisa tu conexión e inténtalo de nuevo."
             )
-            self.lbl_error.update()
+            self.update()
             return
 
         self.on_compra_finalizada()

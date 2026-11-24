@@ -12,11 +12,15 @@ from views.pago_view import PagoView
 from views.mis_pedidos_view import MisPedidosView
 from views.personal_login_view import PersonalLoginView
 from views.vendedor_view import VendedorView
+from views.cocinero_view import CocineroView
 from views.gerencia_view import GerenciaView
 
-# Archivo local para persistencia de sesión
-SESION_FILE = "sesion.json"
-SESION_PERSONAL_FILE = "sesion_personal.json"
+# Directorio persistente compatible con Android (FLET_APP_STORAGE_DATA) y escritorio
+STORAGE_DIR = os.environ.get("FLET_APP_STORAGE_DATA", ".")
+os.makedirs(STORAGE_DIR, exist_ok=True)
+SESION_FILE = os.path.join(STORAGE_DIR, "sesion.json")
+SESION_PERSONAL_FILE = os.path.join(STORAGE_DIR, "sesion_personal.json")
+
 
 def cargar_sesion():
     if os.path.exists(SESION_FILE):
@@ -25,9 +29,10 @@ def cargar_sesion():
                 sesion = json.load(f)
                 sesion.setdefault("token", None)
                 return sesion
-        except:
+        except Exception:
             pass
     return {"id": None, "nombre": None, "apellido": None, "token": None}
+
 
 def guardar_sesion(id_usu, nom, ape, token):
     try:
@@ -36,14 +41,15 @@ def guardar_sesion(id_usu, nom, ape, token):
                 {"id": id_usu, "nombre": nom, "apellido": ape, "token": token},
                 f,
             )
-    except:
-            pass
+    except Exception:
+        pass
+
 
 def limpiar_sesion():
     if os.path.exists(SESION_FILE):
         try:
             os.remove(SESION_FILE)
-        except:
+        except Exception:
             pass
 
 
@@ -52,7 +58,11 @@ def cargar_sesion_personal():
         try:
             with open(SESION_PERSONAL_FILE, "r") as archivo:
                 sesion = json.load(archivo)
-            if sesion.get("token") and sesion.get("rol") in ("gerente", "vendedor"):
+            if sesion.get("token") and sesion.get("rol") in (
+                "gerente",
+                "vendedor",
+                "cocinero",
+            ):
                 return sesion
         except (OSError, ValueError):
             pass
@@ -60,22 +70,28 @@ def cargar_sesion_personal():
 
 
 def guardar_sesion_personal(personal):
-    with open(SESION_PERSONAL_FILE, "w") as archivo:
-        json.dump(
-            {
-                "id": personal["id"],
-                "nombre": personal["nombre"],
-                "correo": personal["correo"],
-                "rol": personal["rol"],
-                "token": personal["token"],
-            },
-            archivo,
-        )
+    try:
+        with open(SESION_PERSONAL_FILE, "w") as archivo:
+            json.dump(
+                {
+                    "id": personal["id"],
+                    "nombre": personal["nombre"],
+                    "correo": personal["correo"],
+                    "rol": personal["rol"],
+                    "token": personal["token"],
+                },
+                archivo,
+            )
+    except OSError:
+        pass
 
 
 def limpiar_sesion_personal():
     if os.path.exists(SESION_PERSONAL_FILE):
-        os.remove(SESION_PERSONAL_FILE)
+        try:
+            os.remove(SESION_PERSONAL_FILE)
+        except OSError:
+            pass
 
 
 def main(page: ft.Page):
@@ -153,11 +169,27 @@ def construir_aplicacion(page: ft.Page):
         page.window.resizable = True
 
     page.bgcolor = "white"
-    page.vertical_alignment = ft.MainAxisAlignment.START 
+    page.vertical_alignment = ft.MainAxisAlignment.START
     page.padding = 0 if es_movil else 16
     page.spacing = 0
 
     acciones_encabezado: ft.Row | None = None
+
+    def abrir_dialogo_seguro(dialogo):
+        try:
+            page.show_dialog(dialogo)
+        except RuntimeError as error:
+            if "Dialog is already opened" in str(error):
+                page.pop_dialog()
+                page.show_dialog(dialogo)
+            else:
+                raise
+
+    def cerrar_dialogo_seguro():
+        try:
+            page.pop_dialog()
+        except RuntimeError:
+            pass
 
     def actualizar_visibilidad_navegacion(visible):
         page.navigation_bar.visible = visible and not es_escritorio
@@ -171,11 +203,12 @@ def construir_aplicacion(page: ft.Page):
         if nav_rail is not None:
             nav_rail.selected_index = indice
 
-    ruta_icono = os.path.join(os.path.dirname(__file__), "assets", "imagenes", "pizzaicon.png")
+    ruta_icono = os.path.join(
+        os.path.dirname(__file__), "assets", "imagenes", "pizzaicon.png"
+    )
     if os.path.exists(ruta_icono):
         page.window.icon = ruta_icono
 
-    # Cargar usuario actual desde el archivo local
     usuario_actual = cargar_sesion()
     if usuario_actual.get("id") and not usuario_actual.get("token"):
         limpiar_sesion()
@@ -189,7 +222,6 @@ def construir_aplicacion(page: ft.Page):
     indice_ventana_actual = [0]
     modalidad_entrega = ["A Domicilio"]
 
-    # Transición profesional con AnimatedSwitcher corregida
     contenido_principal = ft.AnimatedSwitcher(
         content=ft.Container(expand=True),
         transition=ft.AnimatedSwitcherTransition.FADE,
@@ -197,9 +229,9 @@ def construir_aplicacion(page: ft.Page):
         reverse_duration=250,
         switch_in_curve=ft.AnimationCurve.EASE_IN_OUT,
         switch_out_curve=ft.AnimationCurve.EASE_IN_OUT,
-        expand=True
+        expand=True,
     )
-    
+
     contenedor_comprar = ft.Container()
 
     def cerrar_drawer(e=None):
@@ -239,8 +271,15 @@ def construir_aplicacion(page: ft.Page):
         cerrar_drawer()
         actualizar_visibilidad_navegacion(False)
         contenedor_comprar.content = None
-        if personal_actual.get("rol") == "gerente":
+        rol = personal_actual.get("rol")
+        if rol == "gerente":
             contenido_principal.content = GerenciaView(
+                personal=personal_actual,
+                on_cerrar_sesion=cerrar_sesion_personal,
+                es_movil=es_movil,
+            )
+        elif rol == "cocinero":
+            contenido_principal.content = CocineroView(
                 personal=personal_actual,
                 on_cerrar_sesion=cerrar_sesion_personal,
                 es_movil=es_movil,
@@ -262,6 +301,21 @@ def construir_aplicacion(page: ft.Page):
         contenedor_comprar.content = None
         contenido_principal.content = PersonalLoginView(
             rol="vendedor",
+            on_login_exitoso=manejar_login_personal,
+            on_volver=regresar_inicio_general,
+            es_movil=es_movil,
+        )
+        page.update()
+
+    def ir_a_cocina(e=None):
+        cerrar_drawer()
+        if personal_actual.get("rol") == "cocinero" and personal_actual.get("token"):
+            mostrar_panel_personal()
+            return
+        actualizar_visibilidad_navegacion(False)
+        contenedor_comprar.content = None
+        contenido_principal.content = PersonalLoginView(
+            rol="cocinero",
             on_login_exitoso=manejar_login_personal,
             on_volver=regresar_inicio_general,
             es_movil=es_movil,
@@ -301,10 +355,9 @@ def construir_aplicacion(page: ft.Page):
         usuario_actual["nombre"] = nom
         usuario_actual["apellido"] = ape
         usuario_actual["token"] = token
-        
-        # Guardar sesión en archivo local
+
         guardar_sesion(id_usu, nom, ape, token)
-        
+
         menu_lateral.actualizar_menu()
         regresar_inicio_general()
 
@@ -313,22 +366,20 @@ def construir_aplicacion(page: ft.Page):
         usuario_actual["nombre"] = nom
         usuario_actual["apellido"] = ape
         usuario_actual["token"] = token
-        
-        # Guardar sesión en archivo local
+
         guardar_sesion(id_usu, nom, ape, token)
-        
+
         menu_lateral.actualizar_menu()
         regresar_inicio_general()
 
-    def cerrar_sesion(e):
+    def cerrar_sesion(e=None):
         usuario_actual["id"] = None
         usuario_actual["nombre"] = None
         usuario_actual["apellido"] = None
         usuario_actual["token"] = None
-        
-        # Borrar archivo de sesión local
+
         limpiar_sesion()
-        
+
         menu_lateral.actualizar_menu()
         cerrar_drawer()
         regresar_inicio_general()
@@ -341,6 +392,7 @@ def construir_aplicacion(page: ft.Page):
         on_close_click=cerrar_drawer,
         personal_actual=personal_actual,
         on_vendedor_click=ir_a_vendedor,
+        on_cocina_click=ir_a_cocina,
         on_gerencia_click=ir_a_gerencia,
         on_personal_logout_click=lambda e: cerrar_sesion_personal(),
     )
@@ -357,7 +409,7 @@ def construir_aplicacion(page: ft.Page):
         bgcolor=ft.Colors.with_opacity(0.4, ft.Colors.BLACK),
         visible=False,
         expand=True,
-        on_click=cerrar_drawer
+        on_click=cerrar_drawer,
     )
 
     def regresar_inicio_general():
@@ -370,14 +422,12 @@ def construir_aplicacion(page: ft.Page):
         contenedor_comprar.content = btn_comprar
         page.update()
 
-    # Instancia del menú aceptando la categoría
     menu_view_instancia = MenuView(
         on_cart_change=lambda: verificar_estado_compra(),
         categoria_inicial="Pizzas",
         es_movil=es_movil,
     )
 
-    # Instancia de inicio enviando la función para saltar al carrito/menú con categoría
     def navegar_a_categoria(cat):
         actualizar_indice_navegacion(1)
         indice_ventana_actual[0] = 1
@@ -407,7 +457,7 @@ def construir_aplicacion(page: ft.Page):
 
         def cerrar_alerta(e):
             detener_animacion()
-            page.pop_dialog()
+            cerrar_dialogo_seguro()
 
         def ir_a_login_desde_alerta(e):
             cerrar_alerta(e)
@@ -464,11 +514,13 @@ def construir_aplicacion(page: ft.Page):
                 if not animacion_activa[0]:
                     break
                 indice = 1 - indice
-                icono_animado.content = ft.Icon(iconos[indice], size=52, color="#6A0404")
+                icono_animado.content = ft.Icon(
+                    iconos[indice], size=52, color="#6A0404"
+                )
                 if icono_animado.page is not None:
                     icono_animado.update()
 
-        page.show_dialog(dialogo)
+        abrir_dialogo_seguro(dialogo)
         page.run_task(animar_icono)
 
     def realizar_compra(e):
@@ -478,7 +530,7 @@ def construir_aplicacion(page: ft.Page):
 
         items = menu_view_instancia.obtener_items_estado()
         if not items:
-            page.show_dialog(
+            abrir_dialogo_seguro(
                 ft.AlertDialog(
                     modal=True,
                     title=ft.Text("Tu carrito está vacío"),
@@ -488,7 +540,7 @@ def construir_aplicacion(page: ft.Page):
                     actions=[
                         ft.TextButton(
                             "Entendido",
-                            on_click=lambda e: page.pop_dialog(),
+                            on_click=lambda e: cerrar_dialogo_seguro(),
                         )
                     ],
                     actions_alignment=ft.MainAxisAlignment.CENTER,
@@ -652,14 +704,18 @@ def construir_aplicacion(page: ft.Page):
             items = menu_view_instancia.obtener_items_estado()
             hay_seleccion = any(item["cantidad"] > 0 for item in items)
             if hay_seleccion:
-                total_general = sum(item["cantidad"] * item["precio"] for item in items)
-                btn_comprar.content = crear_contenido_boton_pagar(f"${total_general:.2f}")
+                total_general = sum(
+                    item["cantidad"] * item["precio"] for item in items
+                )
+                btn_comprar.content = crear_contenido_boton_pagar(
+                    f"${total_general:.2f}"
+                )
                 btn_comprar.visible = True
             else:
                 btn_comprar.visible = False
         else:
             btn_comprar.visible = False
-            
+
         if btn_comprar.page is not None:
             btn_comprar.update()
 
@@ -684,14 +740,14 @@ def construir_aplicacion(page: ft.Page):
                 ft.TextButton(
                     "Seguir comprando",
                     style=ft.ButtonStyle(color="#6A0404"),
-                    on_click=lambda e: page.pop_dialog(),
+                    on_click=lambda e: cerrar_dialogo_seguro(),
                 ),
                 ft.FilledButton(
                     "Continuar compra",
                     bgcolor="#6A0404",
                     color=ft.Colors.WHITE,
                     on_click=lambda e: (
-                        page.pop_dialog(),
+                        cerrar_dialogo_seguro(),
                         realizar_compra(None),
                     ),
                 ),
@@ -803,10 +859,10 @@ def construir_aplicacion(page: ft.Page):
                 return
 
         actualizar_contenido_carrito()
-        page.show_dialog(dialogo)
+        abrir_dialogo_seguro(dialogo)
 
     def cerrar_sesion_desde_cuenta(e):
-        page.pop_dialog()
+        cerrar_dialogo_seguro()
         cerrar_sesion()
 
     def mostrar_mi_cuenta(e=None):
@@ -822,7 +878,7 @@ def construir_aplicacion(page: ft.Page):
             )
             if parte
         )
-        page.show_dialog(
+        abrir_dialogo_seguro(
             ft.AlertDialog(
                 modal=True,
                 title=ft.Text("Mi cuenta", color="#6A0404"),
@@ -847,7 +903,7 @@ def construir_aplicacion(page: ft.Page):
                     ft.TextButton(
                         "Cerrar",
                         style=ft.ButtonStyle(color="#6A0404"),
-                        on_click=lambda e: page.pop_dialog(),
+                        on_click=lambda e: cerrar_dialogo_seguro(),
                     ),
                     ft.TextButton(
                         "Cerrar sesión",
@@ -1002,16 +1058,18 @@ def construir_aplicacion(page: ft.Page):
                         ft.Icon(
                             ft.Icons.LOCAL_PIZZA_ROUNDED,
                             color="#F4C95D",
-                            size=25,
+                            size=25 if es_escritorio else 22,
                         ),
                         ft.Text(
                             "PizzaExpress",
-                            size=20 if es_escritorio else 18,
+                            size=20 if es_escritorio else 15,
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.WHITE,
+                            max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
                         ),
                     ],
-                    spacing=5,
+                    spacing=4 if es_movil else 5,
                     tight=True,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
@@ -1059,7 +1117,7 @@ def construir_aplicacion(page: ft.Page):
             )
             contenido_principal.content = vista_pedidos
             cargar_pedidos_en_segundo_plano(vista_pedidos)
-            
+
         verificar_estado_compra()
         page.update()
 
@@ -1074,10 +1132,10 @@ def construir_aplicacion(page: ft.Page):
             page.update()
 
             def continuar_compra(e):
-                page.pop_dialog()
+                cerrar_dialogo_seguro()
 
             def cancelar_compra(e):
-                page.pop_dialog()
+                cerrar_dialogo_seguro()
                 menu_view_instancia.limpiar_carrito()
                 mostrar_ventana(indice)
 
@@ -1181,9 +1239,7 @@ def construir_aplicacion(page: ft.Page):
                     bottom=26 if es_escritorio else 20,
                 ),
             )
-            page.show_dialog(
-                dialogo_carrito
-            )
+            abrir_dialogo_seguro(dialogo_carrito)
             return
 
         mostrar_ventana(indice)
@@ -1192,15 +1248,28 @@ def construir_aplicacion(page: ft.Page):
         selected_index=0,
         visible=not es_escritorio,
         bgcolor="#6A0404",
-        indicator_color=ft.Colors.WHITE, 
+        indicator_color=ft.Colors.WHITE,
         label_behavior=ft.NavigationBarLabelBehavior.ALWAYS_SHOW,
         on_change=cambiar_ventana,
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.LOCAL_PIZZA_OUTLINED, selected_icon=ft.Icons.LOCAL_PIZZA, label="Inicio"),
-            ft.NavigationBarDestination(icon=ft.Icons.SHOPPING_CART_OUTLINED, selected_icon=ft.Icons.SHOPPING_CART, label="Carrito"),
-            ft.NavigationBarDestination(icon=ft.Icons.SHOPPING_BAG_SHARP, selected_icon=ft.Icons.SHOPPING_BAG_SHARP, label="PEDIDOS"),
-        ]
+            ft.NavigationBarDestination(
+                icon=ft.Icons.LOCAL_PIZZA_OUTLINED,
+                selected_icon=ft.Icons.LOCAL_PIZZA,
+                label="Inicio",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.SHOPPING_CART_OUTLINED,
+                selected_icon=ft.Icons.SHOPPING_CART,
+                label="Carrito",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.SHOPPING_BAG_SHARP,
+                selected_icon=ft.Icons.SHOPPING_BAG_SHARP,
+                label="PEDIDOS",
+            ),
+        ],
     )
+
     def crear_icono_rail(icono, seleccionado):
         return ft.Container(
             padding=5,
@@ -1275,9 +1344,9 @@ def construir_aplicacion(page: ft.Page):
                     expand=True,
                 ),
                 overlay_oscuro,
-                menu_lateral
+                menu_lateral,
             ],
-            expand=True
+            expand=True,
         )
     )
 
@@ -1289,6 +1358,7 @@ def construir_aplicacion(page: ft.Page):
             cargando=True,
         )
         cargar_pedidos_en_segundo_plano(vista_pedidos_inicio, vista_inicio=True)
+
 
 if __name__ == "__main__":
     ft.run(main, assets_dir="assets")

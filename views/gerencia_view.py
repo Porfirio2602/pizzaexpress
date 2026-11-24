@@ -20,10 +20,23 @@ class GerenciaView(ft.Column):
         self.token_headers = {
             "Authorization": f"Bearer {personal.get('token', '')}",
         }
+
+        borde_campo = {
+            ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(1, "#E7C8B8"),
+            ),
+            ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(2, "#6A0404"),
+            ),
+        }
+
         self.txt_fecha = ft.TextField(
             label="Fecha del reporte (DD/MM/AAAA)",
             value=datetime.now().astimezone().strftime("%d/%m/%Y"),
             width=260,
+            border=borde_campo,
         )
         self.lbl_error = ft.Text("", color=ft.Colors.RED_700, size=13)
         self.lbl_ingresos = ft.Text(
@@ -69,6 +82,7 @@ class GerenciaView(ft.Column):
             ],
         )
         self.lista_vendedores = ft.Column(spacing=8)
+        self.lista_cocineros = ft.Column(spacing=8)
         self.lista_servicios = ft.Column(spacing=6)
         self.lista_ventas_vendedor = ft.Column(spacing=6)
         self.lista_pedidos = ft.Column(spacing=8)
@@ -77,18 +91,35 @@ class GerenciaView(ft.Column):
             label="Buscar pedido por código",
             hint_text="Ej. PE-000019",
             prefix_icon=ft.Icons.SEARCH,
+            border=borde_campo,
             on_change=self.filtrar_pedidos,
+        )
+        self.selector_rol_alta = ft.SegmentedButton(
+            selected=["vendedor"],
+            allow_multiple_selection=False,
+            segments=[
+                ft.Segment(
+                    value="vendedor",
+                    label=ft.Text("Vendedor"),
+                    icon=ft.Icon(ft.Icons.STOREFRONT),
+                ),
+                ft.Segment(
+                    value="cocinero",
+                    label=ft.Text("Cocinero"),
+                    icon=ft.Icon(ft.Icons.SOUP_KITCHEN),
+                ),
+            ],
         )
         self.txt_nombre = ft.TextField(
             label="Nombre completo",
-            border_radius=12,
+            border=borde_campo,
             filled=True,
             fill_color=ft.Colors.WHITE,
         )
         self.txt_correo = ft.TextField(
             label="Correo electrónico",
             keyboard_type=ft.KeyboardType.EMAIL,
-            border_radius=12,
+            border=borde_campo,
             filled=True,
             fill_color=ft.Colors.WHITE,
         )
@@ -96,7 +127,7 @@ class GerenciaView(ft.Column):
             label="Teléfono",
             keyboard_type=ft.KeyboardType.PHONE,
             max_length=10,
-            border_radius=12,
+            border=borde_campo,
             filled=True,
             fill_color=ft.Colors.WHITE,
         )
@@ -104,10 +135,10 @@ class GerenciaView(ft.Column):
             label="Contraseña temporal (mínimo 8 caracteres)",
             password=True,
             can_reveal_password=True,
+            border=borde_campo,
+            filled=True,
+            fill_color=ft.Colors.WHITE,
         )
-        self.txt_contrasena.border_radius = 12
-        self.txt_contrasena.filled = True
-        self.txt_contrasena.fill_color = ft.Colors.WHITE
         self.encabezado = ft.Container(
             padding=ft.Padding(left=8, top=8, right=8, bottom=8),
             bgcolor=ft.Colors.TRANSPARENT,
@@ -247,6 +278,20 @@ class GerenciaView(ft.Column):
                         color="#6A0404",
                     ),
                     self.lista_vendedores,
+                    ft.Divider(height=6, color="#E8D8CF"),
+                    ft.Text(
+                        "Personal de cocina (reparto equitativo activo)",
+                        size=18,
+                        weight=ft.FontWeight.BOLD,
+                        color="#6A0404",
+                    ),
+                    ft.Text(
+                        "Solo gerencia puede dar de alta o activar cocineros. "
+                        "Los pedidos nuevos se reparten por turno rotativo entre los cocineros activos.",
+                        size=12,
+                        color="#806B63",
+                    ),
+                    self.lista_cocineros,
                     ft.Container(
                         padding=16,
                         bgcolor=ft.Colors.WHITE,
@@ -270,13 +315,13 @@ class GerenciaView(ft.Column):
                                         ft.Column(
                                             [
                                                 ft.Text(
-                                                    "Dar de alta vendedor",
+                                                    "Dar de alta personal",
                                                     size=16,
                                                     weight=ft.FontWeight.BOLD,
                                                     color="#3F302B",
                                                 ),
                                                 ft.Text(
-                                                    "Completa los datos de acceso y contacto.",
+                                                    "Selecciona Vendedor o Cocinero y completa los datos.",
                                                     size=12,
                                                     color="#806B63",
                                                 ),
@@ -288,6 +333,7 @@ class GerenciaView(ft.Column):
                                     spacing=10,
                                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                 ),
+                                self.selector_rol_alta,
                                 ft.ResponsiveRow(
                                     spacing=10,
                                     run_spacing=4,
@@ -323,18 +369,18 @@ class GerenciaView(ft.Column):
                                     ],
                                 ),
                                 ft.Text(
-                                    "Mínimo 12 caracteres; incluye mayúscula, minúscula, "
+                                    "Mínimo 8 caracteres; incluye mayúscula, minúscula, "
                                     "número y símbolo.",
                                     size=12,
                                     color="#806B63",
                                 ),
                                 ft.FilledButton(
-                                    "Crear cuenta de vendedor",
+                                    "Crear cuenta de personal",
                                     icon=ft.Icons.PERSON_ADD_ALT_1,
                                     bgcolor="#6A0404",
                                     color=ft.Colors.WHITE,
                                     height=46,
-                                    on_click=self.crear_vendedor,
+                                    on_click=self.crear_empleado,
                                 ),
                             ],
                         ),
@@ -509,10 +555,11 @@ class GerenciaView(ft.Column):
     def did_mount(self):
         self._actualizacion_activa = True
         self._generacion_actualizacion += 1
-        self.page.run_task(
-            self.actualizar_automaticamente,
-            self._generacion_actualizacion,
-        )
+        if self.page is not None:
+            self.page.run_task(
+                self.actualizar_automaticamente,
+                self._generacion_actualizacion,
+            )
 
     def will_unmount(self):
         self._actualizacion_activa = False
@@ -567,10 +614,16 @@ class GerenciaView(ft.Column):
             headers=self.token_headers,
             timeout=15,
         )
-        return reporte, vendedores, pedidos
+        cocineros = requests.get(
+            f"{BASE_URL}/api/gerencia/cocineros",
+            headers=self.token_headers,
+            timeout=15,
+        )
+        return reporte, vendedores, pedidos, cocineros
 
     def mostrar_respuestas(self, respuestas):
-        for respuesta in respuestas:
+        reporte, vendedores, pedidos, cocineros = respuestas
+        for respuesta in (reporte, vendedores, pedidos):
             if respuesta.status_code != 200:
                 try:
                     detalle = respuesta.json().get("detail")
@@ -583,10 +636,18 @@ class GerenciaView(ft.Column):
                 )
                 return False
 
-        reporte, vendedores, pedidos = respuestas
         self.mostrar_reporte(reporte.json())
         self.mostrar_vendedores(vendedores.json().get("vendedores", []))
         self.mostrar_pedidos(pedidos.json().get("pedidos", []))
+        if cocineros.status_code == 200:
+            self.mostrar_cocineros(cocineros.json().get("cocineros", []))
+        else:
+            self.lista_cocineros.controls = [
+                ft.Text(
+                    "Actualiza el servidor para habilitar la gestión de cocina.",
+                    color="#806B63",
+                )
+            ]
         self.actualizar_estado()
         return True
 
@@ -648,28 +709,52 @@ class GerenciaView(ft.Column):
 
     def mostrar_vendedores(self, vendedores):
         self.lista_vendedores.controls = [
-            self.crear_tarjeta_vendedor(vendedor)
+            self.crear_tarjeta_empleado(vendedor, "vendedor")
             for vendedor in vendedores
         ] or [ft.Text("Todavía no hay vendedores.", color="#806B63")]
 
-    def crear_tarjeta_vendedor(self, vendedor):
-        nombre = vendedor.get("nombre", "").strip()
+    def mostrar_cocineros(self, cocineros):
+        self.lista_cocineros.controls = [
+            self.crear_tarjeta_empleado(cocinero, "cocinero")
+            for cocinero in cocineros
+        ] or [ft.Text("Todavía no hay cocineros registrados.", color="#806B63")]
+
+    def crear_tarjeta_empleado(self, empleado, rol):
+        nombre = empleado.get("nombre", "").strip()
         iniciales = "".join(
             palabra[0].upper() for palabra in nombre.split()[:2]
-        ) or "V"
-        activo = bool(vendedor["activo"])
+        ) or ("C" if rol == "cocinero" else "V")
+        activo = bool(empleado["activo"])
         color_estado = "#28734D" if activo else "#8A3B2E"
         fondo_estado = "#E8F4EC" if activo else "#F8EAE7"
+
+        detalles_extra = []
+        if rol == "cocinero":
+            en_cola = empleado.get("pedidos_activos", 0)
+            detalles_extra.append(
+                ft.Row(
+                    [
+                        ft.Icon(
+                            ft.Icons.SOUP_KITCHEN,
+                            size=14,
+                            color="#6A0404",
+                        ),
+                        ft.Text(
+                            f"Comandas activas en preparación: {en_cola}",
+                            size=12,
+                            weight=ft.FontWeight.W_500,
+                            color="#6A0404",
+                        ),
+                    ],
+                    spacing=5,
+                )
+            )
+
         return ft.Container(
             padding=14,
             bgcolor=ft.Colors.WHITE,
             border_radius=14,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#F0E5DF"),
-                bottom=ft.BorderSide(1, "#F0E5DF"),
-                left=ft.BorderSide(1, "#F0E5DF"),
-                right=ft.BorderSide(1, "#F0E5DF"),
-            ),
+            border=ft.Border.all(1, "#F0E5DF"),
             shadow=ft.BoxShadow(
                 blur_radius=8,
                 color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
@@ -700,7 +785,7 @@ class GerenciaView(ft.Column):
                                 ft.Column(
                                     [
                                         ft.Text(
-                                            nombre or "Vendedor",
+                                            nombre or rol.title(),
                                             size=14,
                                             weight=ft.FontWeight.BOLD,
                                             color="#3F302B",
@@ -713,7 +798,7 @@ class GerenciaView(ft.Column):
                                                     color="#806B63",
                                                 ),
                                                 ft.Text(
-                                                    vendedor.get("correo", ""),
+                                                    empleado.get("correo", ""),
                                                     size=12,
                                                     color="#54423B",
                                                     selectable=True,
@@ -729,13 +814,14 @@ class GerenciaView(ft.Column):
                                                     color="#806B63",
                                                 ),
                                                 ft.Text(
-                                                    vendedor.get("telefono", ""),
+                                                    empleado.get("telefono", ""),
                                                     size=12,
                                                     color="#54423B",
                                                 ),
                                             ],
                                             spacing=5,
                                         ),
+                                        *detalles_extra,
                                     ],
                                     spacing=3,
                                     expand=True,
@@ -787,8 +873,8 @@ class GerenciaView(ft.Column):
                                 color="#8A3B2E" if activo else "#28734D",
                                 shape=ft.RoundedRectangleBorder(radius=10),
                             ),
-                            on_click=lambda e, item=vendedor: self.cambiar_estado_vendedor(
-                                item
+                            on_click=lambda e, item=empleado, r=rol: self.cambiar_estado_empleado(
+                                item, r
                             ),
                         ),
                     ),
@@ -827,12 +913,7 @@ class GerenciaView(ft.Column):
             padding=12,
             bgcolor=ft.Colors.WHITE,
             border_radius=12,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#F0D8CA"),
-                bottom=ft.BorderSide(1, "#F0D8CA"),
-                left=ft.BorderSide(1, "#F0D8CA"),
-                right=ft.BorderSide(1, "#F0D8CA"),
-            ),
+            border=ft.Border.all(1, "#F0D8CA"),
             content=ft.Column(
                 spacing=5,
                 controls=[
@@ -859,7 +940,7 @@ class GerenciaView(ft.Column):
                         size=13,
                     ),
                     ft.Text(
-                        f"Registró: {pedido['vendedor']}",
+                        f"Registró: {pedido['vendedor']} · Cocina: {pedido.get('cocinero', 'Sin asignar')}",
                         size=12,
                         color="#806B63",
                     ),
@@ -900,13 +981,21 @@ class GerenciaView(ft.Column):
         except RuntimeError:
             return
 
-    def crear_vendedor(self, e):
+    def rol_alta_seleccionado(self):
+        seleccion = self.selector_rol_alta.selected
+        return seleccion[0] if seleccion else "vendedor"
+
+    def crear_empleado(self, e):
+        if self.personal.get("rol") != "gerente":
+            self.mostrar_error("Solo el gerente puede dar de alta personal.")
+            return
+        rol = self.rol_alta_seleccionado()
         nombre = (self.txt_nombre.value or "").strip()
         correo = (self.txt_correo.value or "").strip().lower()
         telefono = (self.txt_telefono.value or "").strip()
         contrasena = self.txt_contrasena.value or ""
         if not nombre or not correo or not telefono or not contrasena:
-            self.mostrar_error("Completa todos los datos del vendedor.")
+            self.mostrar_error(f"Completa todos los datos del {rol}.")
             return
         if len(telefono) != 10 or not telefono.isdigit():
             self.mostrar_error("El teléfono debe contener exactamente 10 dígitos.")
@@ -917,9 +1006,15 @@ class GerenciaView(ft.Column):
                 "una mayúscula, una minúscula, un número y un símbolo."
             )
             return
+
+        endpoint = (
+            "/api/gerencia/cocineros"
+            if rol == "cocinero"
+            else "/api/gerencia/vendedores"
+        )
         try:
             respuesta = requests.post(
-                f"{BASE_URL}/api/gerencia/vendedores",
+                f"{BASE_URL}{endpoint}",
                 json={
                     "nombre": nombre,
                     "correo": correo,
@@ -940,19 +1035,27 @@ class GerenciaView(ft.Column):
         self.txt_telefono.value = ""
         self.txt_contrasena.value = ""
         actualizados = self.cargar_datos(None)
+        etiqueta = "cocinero" if rol == "cocinero" else "vendedor"
         self.lbl_error.value = (
-            "Cuenta de vendedor creada."
+            f"Cuenta de {etiqueta} creada."
             if actualizados
             else "Cuenta creada, pero no se pudieron actualizar los datos."
         )
         self.actualizar_estado()
 
-    def cambiar_estado_vendedor(self, vendedor):
+    def cambiar_estado_empleado(self, empleado, rol):
+        if self.personal.get("rol") != "gerente":
+            self.mostrar_error("Solo el gerente puede modificar el estado del personal.")
+            return
+        endpoint = (
+            f"/api/gerencia/cocineros/{empleado['id_personal']}/estado"
+            if rol == "cocinero"
+            else f"/api/gerencia/vendedores/{empleado['id_personal']}/estado"
+        )
         try:
             respuesta = requests.patch(
-                f"{BASE_URL}/api/gerencia/vendedores/"
-                f"{vendedor['id_personal']}/estado",
-                json={"activo": not bool(vendedor["activo"])},
+                f"{BASE_URL}{endpoint}",
+                json={"activo": not bool(empleado["activo"])},
                 headers=self.token_headers,
                 timeout=15,
             )
@@ -963,8 +1066,9 @@ class GerenciaView(ft.Column):
             self.mostrar_respuesta_error(respuesta)
             return
         actualizados = self.cargar_datos(None)
+        etiqueta = "cocinero" if rol == "cocinero" else "vendedor"
         self.lbl_error.value = (
-            "Estado del vendedor actualizado."
+            f"Estado del {etiqueta} actualizado."
             if actualizados
             else "Estado actualizado, pero no se pudieron refrescar los datos."
         )

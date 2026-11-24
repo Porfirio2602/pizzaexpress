@@ -13,6 +13,7 @@ import ssl
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import parseaddr
 from pathlib import Path
 from typing import Literal
 from urllib import error as urllib_error
@@ -25,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from components.validaciones import correo_valido, requisitos_contrasena_pendientes
 import zxingcpp
 
-logger = logging.getLogger("pizzaexpress.smtp")
+logger = logging.getLogger("uvicorn.error")
 
 # Permite definir una carpeta persistente en la nube o usar la local por defecto
 DB_FOLDER = os.environ.get("DATA_DIR", "")
@@ -85,7 +86,7 @@ class NuevoPedido(BaseModel):
 class CredencialesPersonal(BaseModel):
     correo: str = Field(min_length=3, max_length=254)
     contrasena: str = Field(min_length=1, max_length=256)
-    rol: Literal["gerente", "vendedor"]
+    rol: Literal["gerente", "vendedor", "cocinero"]
 
 
 class NuevoVendedor(BaseModel):
@@ -160,26 +161,61 @@ def inicializar_base_datos():
             )
             """
         )
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS personal (
-                id_personal INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL,
-                correo TEXT NOT NULL UNIQUE,
-                telefono TEXT NOT NULL,
-                rol TEXT NOT NULL CHECK (rol IN ('gerente', 'vendedor')),
-                password_hash TEXT NOT NULL,
-                activo INTEGER NOT NULL DEFAULT 1,
-                creado_en TEXT NOT NULL
+
+        # Migración automática de tabla personal para soportar el rol 'cocinero'
+        sql_personal = cursor.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='personal'"
+        ).fetchone()
+        if sql_personal and "'cocinero'" not in sql_personal["sql"]:
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            cursor.execute(
+                """
+                CREATE TABLE personal_nueva (
+                    id_personal INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    correo TEXT NOT NULL UNIQUE,
+                    telefono TEXT NOT NULL,
+                    rol TEXT NOT NULL CHECK (rol IN ('gerente', 'vendedor', 'cocinero')),
+                    password_hash TEXT NOT NULL,
+                    activo INTEGER NOT NULL DEFAULT 1,
+                    creado_en TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
+            cursor.execute(
+                """
+                INSERT INTO personal_nueva
+                    (id_personal, nombre, correo, telefono, rol, password_hash, activo, creado_en)
+                SELECT id_personal, nombre, correo, telefono, rol, password_hash, activo, creado_en
+                FROM personal
+                """
+            )
+            cursor.execute("DROP TABLE personal")
+            cursor.execute("ALTER TABLE personal_nueva RENAME TO personal")
+            cursor.execute("PRAGMA foreign_keys = ON")
+        else:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS personal (
+                    id_personal INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    correo TEXT NOT NULL UNIQUE,
+                    telefono TEXT NOT NULL,
+                    rol TEXT NOT NULL CHECK (rol IN ('gerente', 'vendedor', 'cocinero')),
+                    password_hash TEXT NOT NULL,
+                    activo INTEGER NOT NULL DEFAULT 1,
+                    creado_en TEXT NOT NULL
+                )
+                """
+            )
+
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS pedidos (
                 id_pedido INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_cliente INTEGER,
                 id_vendedor INTEGER,
+                id_cocinero INTEGER,
                 tipo_servicio TEXT NOT NULL,
                 direccion TEXT,
                 referencias TEXT,
@@ -192,7 +228,8 @@ def inicializar_base_datos():
                 estado TEXT NOT NULL,
                 metodo_pago TEXT NOT NULL DEFAULT 'No especificado',
                 FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
-                FOREIGN KEY (id_vendedor) REFERENCES personal(id_personal)
+                FOREIGN KEY (id_vendedor) REFERENCES personal(id_personal),
+                FOREIGN KEY (id_cocinero) REFERENCES personal(id_personal)
             )
             """
         )
@@ -206,6 +243,8 @@ def inicializar_base_datos():
             cursor.execute("ALTER TABLE pedidos ADD COLUMN hora_recoleccion TEXT")
         if "id_vendedor" not in columnas_pedidos:
             cursor.execute("ALTER TABLE pedidos ADD COLUMN id_vendedor INTEGER")
+        if "id_cocinero" not in columnas_pedidos:
+            cursor.execute("ALTER TABLE pedidos ADD COLUMN id_cocinero INTEGER")
         if "telefono_contacto" not in columnas_pedidos:
             cursor.execute("ALTER TABLE pedidos ADD COLUMN telefono_contacto TEXT")
         if "creado_en" not in columnas_pedidos:
@@ -236,6 +275,21 @@ def inicializar_base_datos():
                     pedido_legacy["id_pedido"],
                 ),
             )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS estado_reparto_cocina (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                ultimo_id_cocinero INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO estado_reparto_cocina (id, ultimo_id_cocinero)
+            VALUES (1, 0)
+            """
+        )
 
         cursor.execute(
             """
@@ -300,7 +354,7 @@ def inicializar_base_datos():
             gerente_existente = cursor.fetchone()
             if gerente_existente and gerente_existente["rol"] != "gerente":
                 raise RuntimeError(
-                    "El correo configurado para GERENTE_EMAIL ya pertenece a un vendedor."
+                    "El correo configurado para GERENTE_EMAIL ya pertenece a otro miembro del personal."
                 )
             password_hash = hash_password(GERENTE_PASSWORD)
             ahora = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -348,6 +402,37 @@ def inicializar_base_datos():
         conexion.commit()
     finally:
         conexion.close()
+
+
+def asignar_siguiente_cocinero(cursor):
+    """Reparto equitativo Round-Robin dinámico entre los cocineros activos."""
+    cursor.execute(
+        """
+        SELECT id_personal
+        FROM personal
+        WHERE rol = 'cocinero' AND activo = 1
+        ORDER BY id_personal ASC
+        """
+    )
+    cocineros = [fila["id_personal"] for fila in cursor.fetchall()]
+    if not cocineros:
+        return None
+
+    cursor.execute(
+        "SELECT ultimo_id_cocinero FROM estado_reparto_cocina WHERE id = 1"
+    )
+    fila_estado = cursor.fetchone()
+    ultimo_id = fila_estado["ultimo_id_cocinero"] if fila_estado else 0
+
+    siguiente_id = next(
+        (cid for cid in cocineros if cid > ultimo_id),
+        cocineros[0],
+    )
+    cursor.execute(
+        "UPDATE estado_reparto_cocina SET ultimo_id_cocinero = ? WHERE id = 1",
+        (siguiente_id,),
+    )
+    return siguiente_id
 
 
 def crear_sesion(cursor, id_cliente):
@@ -413,10 +498,10 @@ def verificar_password(contrasena, password_hash):
 def configuracion_smtp():
     host = os.environ.get("SMTP_HOST", "").strip()
     usuario = os.environ.get("SMTP_USER", "").strip()
-    contrasena = os.environ.get("SMTP_PASSWORD", "")
-    remitente = os.environ.get("SMTP_FROM", usuario).strip()
+    contrasena = os.environ.get("SMTP_PASSWORD", "").strip()
+    remitente = (os.environ.get("SMTP_FROM") or usuario).strip()
     try:
-        puerto = int(os.environ.get("SMTP_PORT", "587"))
+        puerto = int(os.environ.get("SMTP_PORT", "587").strip())
     except ValueError as error:
         raise HTTPException(
             status_code=503,
@@ -431,31 +516,65 @@ def configuracion_smtp():
     return host, puerto, usuario, contrasena, remitente
 
 
+def validar_configuracion_correo():
+    if os.environ.get("BREVO_API_KEY", "").strip():
+        remitente = (
+            os.environ.get("BREVO_FROM")
+            or os.environ.get("SMTP_FROM")
+            or os.environ.get("SMTP_USER")
+            or ""
+        ).strip()
+        _, correo_remitente = parseaddr(remitente)
+        if not correo_remitente:
+            raise HTTPException(
+                status_code=503,
+                detail="Falta configurar BREVO_FROM o SMTP_FROM en el servidor.",
+            )
+        return
+    if os.environ.get("RESEND_API_KEY", "").strip():
+        return
+    configuracion_smtp()
+
+
 def enviar_correo_restablecimiento(correo, codigo):
+    asunto = "Código para restablecer tu contraseña de PizzaExpress"
+    texto = (
+        "Recibimos una solicitud para restablecer tu contraseña de PizzaExpress.\n"
+        f"Tu código de confirmación es: {codigo}\n"
+        "Escribe este código en la aplicación antes de 3 minutos.\n"
+        "Si no solicitaste este cambio, ignora este mensaje."
+    )
+    html = (
+        "<p>Recibimos una solicitud para restablecer tu contraseña de "
+        "PizzaExpress.</p>"
+        f"<p>Tu código de confirmación es: <strong>{codigo}</strong></p>"
+        "<p>Escríbelo en la aplicación antes de 3 minutos. Si no solicitaste "
+        "este cambio, ignora este mensaje.</p>"
+    )
+
     brevo_api_key = os.environ.get("BREVO_API_KEY", "").strip()
     if brevo_api_key:
-        brevo_from = os.environ.get(
-            "BREVO_FROM",
-            "sajusa1221@gmail.com",
+        remitente_raw = (
+            os.environ.get("BREVO_FROM")
+            or os.environ.get("SMTP_FROM")
+            or os.environ.get("SMTP_USER")
+            or ""
         ).strip()
+        nombre_remitente, correo_remitente = parseaddr(remitente_raw)
         brevo_from_name = os.environ.get(
             "BREVO_FROM_NAME",
-            "PizzaExpress",
+            nombre_remitente or "PizzaExpress",
         ).strip()
         payload = json.dumps(
             {
                 "sender": {
                     "name": brevo_from_name,
-                    "email": brevo_from,
+                    "email": correo_remitente or remitente_raw,
                 },
                 "to": [{"email": correo}],
-                "subject": "Código para restablecer tu contraseña de PizzaExpress",
-                "textContent": (
-                    "Recibimos una solicitud para restablecer tu contraseña "
-                    "de PizzaExpress.\n"
-                    f"Tu código de confirmación es: {codigo}\n"
-                    "Escribe este código en la aplicación antes de 3 minutos."
-                ),
+                "subject": asunto,
+                "textContent": texto,
+                "htmlContent": html,
             }
         ).encode("utf-8")
         solicitud_http = urllib_request.Request(
@@ -480,9 +599,11 @@ def enviar_correo_restablecimiento(correo, codigo):
                     )
             return
         except urllib_error.HTTPError as error:
-            logger.exception(
-                "Brevo delivery failed with HTTP status %s",
+            detalle = error.read().decode("utf-8", errors="ignore")
+            logger.error(
+                "Brevo delivery failed: status=%s body=%s",
                 error.code,
+                detalle,
             )
             raise HTTPException(
                 status_code=503,
@@ -505,13 +626,9 @@ def enviar_correo_restablecimiento(correo, codigo):
             {
                 "from": resend_from,
                 "to": [correo],
-                "subject": "Código para restablecer tu contraseña de PizzaExpress",
-                "text": (
-                    "Recibimos una solicitud para restablecer tu contraseña "
-                    "de PizzaExpress.\n"
-                    f"Tu código de confirmación es: {codigo}\n"
-                    "Escribe este código en la aplicación antes de 3 minutos."
-                ),
+                "subject": asunto,
+                "text": texto,
+                "html": html,
             }
         ).encode("utf-8")
         solicitud_http = urllib_request.Request(
@@ -535,9 +652,11 @@ def enviar_correo_restablecimiento(correo, codigo):
                     )
             return
         except urllib_error.HTTPError as error:
-            logger.exception(
-                "Resend delivery failed with HTTP status %s",
+            detalle = error.read().decode("utf-8", errors="ignore")
+            logger.error(
+                "Resend delivery failed: status=%s body=%s",
                 error.code,
+                detalle,
             )
             raise HTTPException(
                 status_code=503,
@@ -551,25 +670,12 @@ def enviar_correo_restablecimiento(correo, codigo):
             ) from error
 
     host, puerto, usuario, contrasena, remitente = configuracion_smtp()
-
     mensaje = EmailMessage()
-    mensaje["Subject"] = "Código para restablecer tu contraseña de PizzaExpress"
+    mensaje["Subject"] = asunto
     mensaje["From"] = remitente
     mensaje["To"] = correo
-    mensaje.set_content(
-        "Recibimos una solicitud para restablecer tu contraseña de PizzaExpress.\n"
-        f"Tu código de confirmación es: {codigo}\n"
-        "Escribe este código en la aplicación antes de 3 minutos.\n"
-        "Si no solicitaste este cambio, ignora este mensaje."
-    )
-    mensaje.add_alternative(
-        "<p>Recibimos una solicitud para restablecer tu contraseña de "
-        "PizzaExpress.</p>"
-        f'<p>Tu código de confirmación es: <strong>{codigo}</strong></p>'
-        "<p>Escríbelo en la aplicación antes de 3 minutos. Si no solicitaste este cambio, "
-        "ignora este mensaje.</p>",
-        subtype="html",
-    )
+    mensaje.set_content(texto)
+    mensaje.add_alternative(html, subtype="html")
 
     try:
         if puerto == 465:
@@ -792,7 +898,7 @@ def solicitar_restablecimiento_contrasena(
     correo = solicitud.correo.strip().lower()
     if not correo_valido(correo):
         raise HTTPException(status_code=422, detail="Ingresa un correo válido.")
-    configuracion_smtp()
+    validar_configuracion_correo()
 
     conexion = conectar_db()
     cursor = conexion.cursor()
@@ -810,6 +916,7 @@ def solicitar_restablecimiento_contrasena(
             expira_en = (
                 datetime.now(timezone.utc) + PASSWORD_RESET_DURATION
             ).isoformat()
+            enviar_correo_restablecimiento(correo, codigo)
             cursor.execute("BEGIN IMMEDIATE")
             cursor.execute(
                 """
@@ -824,7 +931,6 @@ def solicitar_restablecimiento_contrasena(
                 """,
                 (cliente["id_cliente"], codigo_hash, expira_en),
             )
-            enviar_correo_restablecimiento(correo, codigo)
             conexion.commit()
         return {
             "mensaje": (
@@ -833,7 +939,8 @@ def solicitar_restablecimiento_contrasena(
             )
         }
     except HTTPException:
-        conexion.rollback()
+        if conexion.in_transaction:
+            conexion.rollback()
         raise
     finally:
         conexion.close()
@@ -1135,6 +1242,190 @@ def cambiar_estado_vendedor(
         conexion.close()
 
 
+@app.get("/api/gerencia/cocineros")
+def listar_cocineros(authorization: str | None = Header(default=None)):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "gerente")
+        cursor.execute(
+            """
+            SELECT p.id_personal, p.nombre, p.correo, p.telefono, p.activo, p.creado_en,
+                   COUNT(ped.id_pedido) AS pedidos_activos
+            FROM personal p
+            LEFT JOIN pedidos ped
+                ON ped.id_cocinero = p.id_personal AND ped.estado = 'En Proceso'
+            WHERE p.rol = 'cocinero'
+            GROUP BY p.id_personal
+            ORDER BY p.id_personal ASC
+            """
+        )
+        return {"cocineros": [dict(fila) for fila in cursor.fetchall()]}
+    finally:
+        conexion.close()
+
+
+@app.post("/api/gerencia/cocineros", status_code=201)
+def crear_cocinero(
+    cocinero: NuevoVendedor,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "gerente")
+        validar_contrasena_personal(cocinero.contrasena)
+        correo = cocinero.correo.strip().lower()
+        cursor.execute(
+            """
+            INSERT INTO personal
+                (nombre, correo, telefono, rol, password_hash, activo, creado_en)
+            VALUES (?, ?, ?, 'cocinero', ?, 1, ?)
+            """,
+            (
+                cocinero.nombre.strip(),
+                correo,
+                cocinero.telefono.strip(),
+                hash_password(cocinero.contrasena),
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ),
+        )
+        id_cocinero = cursor.lastrowid
+        conexion.commit()
+        return {"id": id_cocinero, "mensaje": "Cocinero creado correctamente."}
+    except sqlite3.IntegrityError as error:
+        conexion.rollback()
+        if "UNIQUE constraint failed: personal.correo" in str(error):
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe una cuenta de personal con ese correo.",
+            ) from error
+        raise
+    finally:
+        conexion.close()
+
+
+@app.patch("/api/gerencia/cocineros/{id_cocinero}/estado")
+def cambiar_estado_cocinero(
+    id_cocinero: int,
+    estado: EstadoVendedor,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "gerente")
+        cursor.execute(
+            """
+            UPDATE personal
+            SET activo = ?
+            WHERE id_personal = ? AND rol = 'cocinero'
+            """,
+            (int(estado.activo), id_cocinero),
+        )
+        if cursor.rowcount != 1:
+            raise HTTPException(status_code=404, detail="Cocinero no encontrado.")
+        if not estado.activo:
+            cursor.execute(
+                """
+                DELETE FROM sesiones_personal
+                WHERE id_personal = ?
+                """,
+                (id_cocinero,),
+            )
+        conexion.commit()
+        return {"mensaje": "Estado del cocinero actualizado."}
+    except HTTPException:
+        conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
+@app.get("/api/cocina/pedidos")
+def listar_pedidos_cocina(
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cocinero = autenticar_personal(cursor, authorization, "cocinero")
+        cursor.execute(
+            """
+            SELECT id_pedido, nombre_contacto, tipo_servicio, fecha,
+                   creado_en, hora_recoleccion, estado,
+                   CASE
+                       WHEN id_cliente IS NOT NULL AND id_vendedor IS NULL
+                           THEN 'App'
+                       ELSE 'Mostrador'
+                   END AS origen
+            FROM pedidos
+            WHERE id_cocinero = ? AND estado IN ('En Proceso', 'Lista')
+            ORDER BY julianday(creado_en) ASC, id_pedido ASC
+            """,
+            (cocinero["id_personal"],),
+        )
+        pedidos = [dict(fila) for fila in cursor.fetchall()]
+        for pedido in pedidos:
+            pedido["codigo"] = f"PE-{pedido['id_pedido']:06d}"
+            cursor.execute(
+                """
+                SELECT nombre_pizza, cantidad
+                FROM detalle_pedido
+                WHERE id_pedido = ?
+                ORDER BY id_detalle
+                """,
+                (pedido["id_pedido"],),
+            )
+            pedido["detalles"] = [dict(fila) for fila in cursor.fetchall()]
+        return {"pedidos": pedidos}
+    finally:
+        conexion.close()
+
+
+@app.patch("/api/cocina/pedidos/{id_pedido}/listo")
+def marcar_pedido_listo_cocina(
+    id_pedido: int,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cocinero = autenticar_personal(cursor, authorization, "cocinero")
+        cursor.execute(
+            """
+            SELECT estado
+            FROM pedidos
+            WHERE id_pedido = ? AND id_cocinero = ?
+            """,
+            (id_pedido, cocinero["id_personal"]),
+        )
+        pedido = cursor.fetchone()
+        if pedido is None:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+        if pedido["estado"] != "En Proceso":
+            raise HTTPException(
+                status_code=409,
+                detail="Este pedido ya fue marcado como listo o finalizado.",
+            )
+
+        cursor.execute(
+            """
+            UPDATE pedidos
+            SET estado = 'Lista'
+            WHERE id_pedido = ? AND id_cocinero = ? AND estado = 'En Proceso'
+            """,
+            (id_pedido, cocinero["id_personal"]),
+        )
+        conexion.commit()
+        return {"mensaje": "Pedido marcado como listo.", "estado": "Lista"}
+    except HTTPException:
+        conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+
+
 @app.post("/api/personal/pedidos", status_code=201)
 def crear_pedido_vendedor(
     pedido: NuevoPedidoVendedor,
@@ -1173,20 +1464,22 @@ def crear_pedido_vendedor(
         subtotal = round(subtotal, 2)
         ahora = datetime.now().astimezone()
         cursor.execute("BEGIN IMMEDIATE")
+        id_cocinero = asignar_siguiente_cocinero(cursor)
         cursor.execute(
             """
             INSERT INTO pedidos (
-                id_cliente, id_vendedor, nombre_contacto, tipo_servicio,
+                id_cliente, id_vendedor, id_cocinero, nombre_contacto, tipo_servicio,
                 direccion, referencias, telefono_contacto, subtotal,
                 costo_envio, total, fecha, creado_en, estado, hora_recoleccion,
                 metodo_pago
             )
             VALUES (
-                NULL, ?, ?, ?, '', '', ?, ?, 0, ?, ?, ?, 'En Proceso', NULL, ?
+                NULL, ?, ?, ?, ?, '', '', ?, ?, 0, ?, ?, ?, 'En Proceso', NULL, ?
             )
             """,
             (
                 vendedor["id_personal"],
+                id_cocinero,
                 nombre_contacto,
                 pedido.tipo_servicio,
                 telefono,
@@ -1216,6 +1509,7 @@ def crear_pedido_vendedor(
             "subtotal": subtotal,
             "total": subtotal,
             "metodo_pago": pedido.metodo_pago,
+            "id_cocinero": id_cocinero,
         }
     except HTTPException:
         conexion.rollback()
@@ -1237,8 +1531,8 @@ def listar_pedidos_vendedor(
         vendedor = autenticar_personal(cursor, authorization, "vendedor")
         cursor.execute(
             """
-            SELECT id_pedido, id_vendedor, nombre_contacto, telefono_contacto, tipo_servicio,
-                   fecha, creado_en, total, estado, metodo_pago,
+            SELECT id_pedido, id_vendedor, id_cocinero, nombre_contacto, telefono_contacto,
+                   tipo_servicio, fecha, creado_en, total, estado, metodo_pago,
                    'Mostrador' AS origen
             FROM pedidos
             WHERE id_vendedor = ?
@@ -1549,10 +1843,12 @@ def listar_pedidos_gerencia(
             SELECT p.id_pedido, p.nombre_contacto, p.telefono_contacto,
                    p.tipo_servicio, p.fecha, p.creado_en, p.total, p.estado,
                    p.metodo_pago,
-                   COALESCE(v.nombre, 'Cliente de la app') AS vendedor
+                   COALESCE(v.nombre, 'Cliente de la app') AS vendedor,
+                   COALESCE(c.nombre, 'Sin asignar') AS cocinero
             FROM pedidos p
             LEFT JOIN personal v ON v.id_personal = p.id_vendedor
-            WHERE date(p.creado_en, 'localtime') = ?
+            LEFT JOIN personal c ON c.id_personal = p.id_cocinero
+            WHERE date(p.creado_en, '-6 hours') = ?
             ORDER BY julianday(p.creado_en) DESC, p.id_pedido DESC
             LIMIT 500
             """,
@@ -1590,7 +1886,7 @@ def reporte_gerencia(
             SELECT COUNT(*) AS cantidad,
                    COALESCE(SUM(total), 0) AS ingresos
             FROM pedidos
-            WHERE date(creado_en, 'localtime') = ? AND estado != 'Cancelada'
+            WHERE date(creado_en, '-6 hours') = ? AND estado != 'Cancelada'
             """,
             (fecha_consulta.isoformat(),),
         )
@@ -1601,7 +1897,7 @@ def reporte_gerencia(
                    COUNT(*) AS cantidad, COALESCE(SUM(p.total), 0) AS ingresos
             FROM pedidos p
             LEFT JOIN personal v ON v.id_personal = p.id_vendedor
-            WHERE date(p.creado_en, 'localtime') = ? AND p.estado != 'Cancelada'
+            WHERE date(p.creado_en, '-6 hours') = ? AND p.estado != 'Cancelada'
             GROUP BY p.id_vendedor, v.nombre
             ORDER BY ingresos DESC, vendedor COLLATE NOCASE
             """,
@@ -1613,7 +1909,7 @@ def reporte_gerencia(
             SELECT tipo_servicio, COUNT(*) AS cantidad,
                    COALESCE(SUM(total), 0) AS ingresos
             FROM pedidos
-            WHERE date(creado_en, 'localtime') = ? AND estado != 'Cancelada'
+            WHERE date(creado_en, '-6 hours') = ? AND estado != 'Cancelada'
             GROUP BY tipo_servicio
             ORDER BY tipo_servicio
             """,
@@ -1668,6 +1964,25 @@ def crear_pedido(pedido: NuevoPedido, authorization: str | None = Header(default
     cursor = conexion.cursor()
     try:
         id_cliente = autenticar_cliente(cursor, authorization)
+        precios_catalogo = {
+            nombre: precio for nombre, precio in PRODUCTOS_VENTA.values()
+        }
+        items_validados = []
+        subtotal_calculado = 0.0
+        for item in pedido.items:
+            precio_real = precios_catalogo.get(item.nombre_pizza)
+            if precio_real is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Producto no disponible: {item.nombre_pizza}",
+                )
+            items_validados.append((item.nombre_pizza, item.cantidad, precio_real))
+            subtotal_calculado += item.cantidad * precio_real
+
+        subtotal_calculado = round(subtotal_calculado, 2)
+        costo_envio_calculado = 35.0 if pedido.tipo_servicio == "A Domicilio" else 0.0
+        total_calculado = round(subtotal_calculado + costo_envio_calculado, 2)
+
         if pedido.tipo_servicio == "En Tienda":
             if pedido.hora_recoleccion is None:
                 raise HTTPException(
@@ -1718,25 +2033,26 @@ def crear_pedido(pedido: NuevoPedido, authorization: str | None = Header(default
             hora_recoleccion_guardada = None
 
         cursor.execute("BEGIN IMMEDIATE")
-        # Se omite el UPDATE masivo para no cancelar pedidos abiertos en otros dispositivos del mismo cliente
+        id_cocinero = asignar_siguiente_cocinero(cursor)
         cursor.execute(
             """
             INSERT INTO pedidos (
-                id_cliente, nombre_contacto, tipo_servicio, direccion,
+                id_cliente, id_cocinero, nombre_contacto, tipo_servicio, direccion,
                 referencias, subtotal, costo_envio, total, fecha, estado,
                 hora_recoleccion, telefono_contacto, creado_en
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'En Proceso', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'En Proceso', ?, ?, ?)
             """,
             (
                 id_cliente,
+                id_cocinero,
                 pedido.nombre_contacto.strip(),
                 pedido.tipo_servicio,
                 pedido.direccion.strip(),
                 pedido.referencias.strip(),
-                pedido.subtotal,
-                pedido.costo_envio,
-                pedido.total,
+                subtotal_calculado,
+                costo_envio_calculado,
+                total_calculado,
                 datetime.now().strftime("%d/%m/%Y - %H:%M"),
                 hora_recoleccion_guardada,
                 "",
@@ -1751,14 +2067,15 @@ def crear_pedido(pedido: NuevoPedido, authorization: str | None = Header(default
             VALUES (?, ?, ?, ?)
             """,
             [
-                (id_pedido, item.nombre_pizza, item.cantidad, item.precio_unitario)
-                for item in pedido.items
+                (id_pedido, nombre, cantidad, precio)
+                for nombre, cantidad, precio in items_validados
             ],
         )
         conexion.commit()
         return {
             "id_pedido": id_pedido,
             "codigo": f"PE-{id_pedido:06d}",
+            "id_cocinero": id_cocinero,
         }
     except HTTPException:
         conexion.rollback()

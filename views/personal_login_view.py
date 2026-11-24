@@ -1,3 +1,4 @@
+import asyncio
 import requests
 import flet as ft
 from config import BASE_URL
@@ -17,6 +18,18 @@ class PersonalLoginView(ft.Container):
         self.on_volver = on_volver
         self.expand = True
         self.alignment = ft.Alignment.CENTER
+
+        borde_campo = {
+            ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                border_radius=14,
+                side=ft.BorderSide(1, "#E7C8B8"),
+            ),
+            ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                border_radius=14,
+                side=ft.BorderSide(2, "#6A0404"),
+            ),
+        }
+
         self.txt_correo = ft.TextField(
             label="Correo del personal",
             value="sajusa1@gmail.com" if rol == "gerente" else "",
@@ -24,6 +37,7 @@ class PersonalLoginView(ft.Container):
             width=300 if es_movil else None,
             expand=not es_movil,
             prefix_icon=ft.Icons.BADGE_OUTLINED,
+            on_submit=self.iniciar_sesion,
         )
         self.txt_contrasena = ft.TextField(
             label="Contraseña",
@@ -32,6 +46,7 @@ class PersonalLoginView(ft.Container):
             width=300 if es_movil else None,
             expand=not es_movil,
             prefix_icon=ft.Icons.KEY_OUTLINED,
+            on_submit=self.iniciar_sesion,
         )
         self.txt_error = ft.Text("", color=ft.Colors.RED_700, size=13)
 
@@ -39,10 +54,7 @@ class PersonalLoginView(ft.Container):
             campo.height = 58 if es_movil else 62
             campo.filled = True
             campo.fill_color = "#FFFCFA"
-            campo.border_color = "#E7C8B8"
-            campo.focused_border_color = "#6A0404"
-            campo.focused_border_width = 2
-            campo.border_radius = 14
+            campo.border = borde_campo
             campo.content_padding = ft.Padding(
                 left=14,
                 top=14,
@@ -50,16 +62,46 @@ class PersonalLoginView(ft.Container):
                 bottom=14,
             )
 
-        es_gerencia = rol == "gerente"
-        titulo = (
-            "Administración general"
-            if es_gerencia
-            else "Comanda y caja de venta"
-        )
-        subtitulo = (
-            "Accede a la administración general del negocio."
-            if es_gerencia
-            else "Accede a la comanda y caja de venta diaria."
+        if rol == "gerente":
+            titulo = "Administración general"
+            subtitulo = "Accede a la administración general del negocio."
+            icono_cabecera = ft.Icons.ADMIN_PANEL_SETTINGS
+            icono_boton = ft.Icons.SHIELD
+        elif rol == "cocinero":
+            titulo = "Estación de Cocina"
+            subtitulo = "Accede a las comandas asignadas en tiempo real."
+            icono_cabecera = ft.Icons.SOUP_KITCHEN
+            icono_boton = ft.Icons.SOUP_KITCHEN
+        else:
+            titulo = "Comanda y caja de venta"
+            subtitulo = "Accede a la comanda y caja de venta diaria."
+            icono_cabecera = ft.Icons.STOREFRONT
+            icono_boton = ft.Icons.STOREFRONT
+
+        self.btn_iniciar = ft.FilledButton(
+            content=ft.Row(
+                [
+                    ft.Icon(
+                        icono_boton,
+                        size=19,
+                    ),
+                    ft.Text("Iniciar sesión"),
+                    ft.Icon(
+                        ft.Icons.ARROW_FORWARD,
+                        size=19,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=10,
+                tight=True,
+            ),
+            bgcolor="#6A0404",
+            color=ft.Colors.WHITE,
+            height=52,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=16),
+            ),
+            on_click=self.iniciar_sesion,
         )
 
         self.content = ft.Column(
@@ -88,22 +130,25 @@ class PersonalLoginView(ft.Container):
                                 spacing=14,
                                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                                 controls=[
-                                    ft.Container(
-                                        width=68,
-                                        height=68,
-                                        alignment=ft.Alignment.CENTER,
-                                        bgcolor=ft.Colors.with_opacity(
-                                            0.08,
-                                            "#6A0404",
-                                        ),
-                                        border_radius=34,
-                                        content=ft.Icon(
-                                            ft.Icons.ADMIN_PANEL_SETTINGS
-                                            if es_gerencia
-                                            else ft.Icons.STOREFRONT,
-                                            size=34,
-                                            color="#6A0404",
-                                        ),
+                                    ft.Row(
+                                        alignment=ft.MainAxisAlignment.CENTER,
+                                        controls=[
+                                            ft.Container(
+                                                width=68,
+                                                height=68,
+                                                alignment=ft.Alignment.CENTER,
+                                                bgcolor=ft.Colors.with_opacity(
+                                                    0.08,
+                                                    "#6A0404",
+                                                ),
+                                                border_radius=34,
+                                                content=ft.Icon(
+                                                    icono_cabecera,
+                                                    size=34,
+                                                    color="#6A0404",
+                                                ),
+                                            ),
+                                        ],
                                     ),
                                     ft.Text(
                                         titulo,
@@ -121,35 +166,7 @@ class PersonalLoginView(ft.Container):
                                     self.txt_correo,
                                     self.txt_contrasena,
                                     self.txt_error,
-                                    ft.FilledButton(
-                                        content=ft.Row(
-                                            [
-                                                ft.Icon(
-                                                    ft.Icons.SHIELD
-                                                    if es_gerencia
-                                                    else ft.Icons.STOREFRONT,
-                                                    size=19,
-                                                ),
-                                                ft.Text("Iniciar sesión"),
-                                                ft.Icon(
-                                                    ft.Icons.ARROW_FORWARD,
-                                                    size=19,
-                                                ),
-                                            ],
-                                            alignment=ft.MainAxisAlignment.CENTER,
-                                            spacing=10,
-                                            tight=True,
-                                        ),
-                                        bgcolor="#6A0404",
-                                        color=ft.Colors.WHITE,
-                                        height=52,
-                                        style=ft.ButtonStyle(
-                                            shape=ft.RoundedRectangleBorder(
-                                                radius=16
-                                            ),
-                                        ),
-                                        on_click=self.iniciar_sesion,
-                                    ),
+                                    self.btn_iniciar,
                                     ft.Text(
                                         "Sesión protegida para terminal del local.",
                                         size=12,
@@ -170,6 +187,10 @@ class PersonalLoginView(ft.Container):
         )
 
     def iniciar_sesion(self, e):
+        if self.page is not None:
+            self.page.run_task(self._iniciar_sesion_async, e)
+
+    async def _iniciar_sesion_async(self, e):
         correo = (self.txt_correo.value or "").strip().lower()
         contrasena = self.txt_contrasena.value or ""
         if not correo or not contrasena:
@@ -177,8 +198,14 @@ class PersonalLoginView(ft.Container):
             self.actualizar_error()
             return
 
+        self.txt_error.value = ""
+        self.btn_iniciar.disabled = True
+        if self.page is not None:
+            self.page.update()
+
         try:
-            respuesta = requests.post(
+            respuesta = await asyncio.to_thread(
+                requests.post,
                 f"{BASE_URL}/api/personal/login",
                 json={
                     "correo": correo,
@@ -188,12 +215,14 @@ class PersonalLoginView(ft.Container):
                 timeout=45,
             )
         except requests.RequestException:
+            self.btn_iniciar.disabled = False
             self.txt_error.value = (
                 "No se pudo conectar con el servidor. Inténtalo de nuevo."
             )
             self.actualizar_error()
             return
 
+        self.btn_iniciar.disabled = False
         if respuesta.status_code != 200:
             try:
                 detalle = respuesta.json().get("detail")
@@ -217,6 +246,6 @@ class PersonalLoginView(ft.Container):
     def actualizar_error(self):
         try:
             if self.page is not None:
-                self.txt_error.update()
+                self.update()
         except RuntimeError:
             return

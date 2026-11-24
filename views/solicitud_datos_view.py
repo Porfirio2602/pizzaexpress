@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import flet as ft
 from components.validaciones import correo_valido, nombre_valido, telefono_valido
 
+
 class SolicitudDatosView(ft.Column):
     def __init__(self, items_estado, on_regresar, on_continuar_pago, es_movil=False):
         super().__init__()
@@ -20,6 +21,17 @@ class SolicitudDatosView(ft.Column):
         tamano_total = 16 if es_movil else 15
         tamano_opcion = 14 if es_movil else 13
 
+        borde_campo = {
+            ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(1, "#E7C8B8"),
+            ),
+            ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(2, "#6A0404"),
+            ),
+        }
+
         self.datos_pedido = {
             "tipo_servicio": "A Domicilio",
             "direccion": "",
@@ -36,6 +48,7 @@ class SolicitudDatosView(ft.Column):
             height=alto_campo,
             content_padding=padding_campo,
             expand=True,
+            border=borde_campo,
         )
         self.txt_ref = ft.TextField(
             label="Indique alguna(s) referencia(s)",
@@ -43,12 +56,14 @@ class SolicitudDatosView(ft.Column):
             height=alto_campo,
             content_padding=padding_campo,
             expand=True,
+            border=borde_campo,
         )
         self.txt_nombre_contacto = ft.TextField(
             label="Nombre completo",
             text_size=tamano_campo,
             height=alto_campo,
             content_padding=padding_campo,
+            border=borde_campo,
         )
         self.txt_telefono_contacto = ft.TextField(
             label="Teléfono",
@@ -56,6 +71,9 @@ class SolicitudDatosView(ft.Column):
             height=alto_campo,
             content_padding=padding_campo,
             expand=True,
+            keyboard_type=ft.KeyboardType.PHONE,
+            max_length=10,
+            border=borde_campo,
         )
         self.txt_correo_contacto = ft.TextField(
             label="Correo",
@@ -63,13 +81,17 @@ class SolicitudDatosView(ft.Column):
             height=alto_campo,
             content_padding=padding_campo,
             expand=True,
+            keyboard_type=ft.KeyboardType.EMAIL,
+            border=borde_campo,
         )
-        self.lbl_error = ft.Text("", color=ft.Colors.RED_700, size=14, weight="bold")
+        self.lbl_error = ft.Text(
+            "", color=ft.Colors.RED_700, size=14, weight="bold"
+        )
 
         self.campos_direccion = ft.Column(
             controls=[self.txt_dir, self.txt_ref],
             spacing=10,
-            visible=True
+            visible=True,
         )
         self.horarios_recoleccion = self.generar_horarios_recoleccion()
         self.selector_hora_recoleccion = ft.Dropdown(
@@ -89,9 +111,16 @@ class SolicitudDatosView(ft.Column):
                 shape=ft.RoundedRectangleBorder(radius=14),
             ),
             content_padding=ft.Padding(left=16, top=12, right=16, bottom=12),
-            border_color="#E7C8B8",
-            focused_border_color="#6A0404",
-            border_radius=14,
+            border={
+                ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                    border_radius=14,
+                    side=ft.BorderSide(1, "#E7C8B8"),
+                ),
+                ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                    border_radius=14,
+                    side=ft.BorderSide(2, "#6A0404"),
+                ),
+            },
             filled=True,
             fill_color=ft.Colors.WHITE,
             hover_color="#FFF3EA",
@@ -194,38 +223,40 @@ class SolicitudDatosView(ft.Column):
             height=78 if es_movil else 72,
             bgcolor="#FFF4EC",
             border_radius=14,
-            border=ft.Border(
-                top=ft.BorderSide(2, "#6A0404"),
-                bottom=ft.BorderSide(2, "#6A0404"),
-                left=ft.BorderSide(2, "#6A0404"),
-                right=ft.BorderSide(2, "#6A0404"),
+            border=ft.Border.all(2, "#6A0404"),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.LOCAL_SHIPPING,
+                                color="#6A0404",
+                                size=20 if es_movil else 18,
+                            ),
+                            ft.Text(
+                                "A Domicilio",
+                                weight="bold",
+                                size=tamano_opcion,
+                                color="#6A0404",
+                            ),
+                            ft.Icon(
+                                ft.Icons.CHECK_CIRCLE,
+                                color="#6A0404",
+                                size=18,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    ft.Text(
+                        "35-45 min",
+                        size=12 if es_movil else 11,
+                        color="#806B63",
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                ],
+                spacing=4,
             ),
-            content=ft.Column([
-                ft.Row(
-                    [
-                        ft.Icon(
-                            ft.Icons.LOCAL_SHIPPING,
-                            color="#6A0404",
-                            size=20 if es_movil else 18,
-                        ),
-                        ft.Text(
-                            "A Domicilio",
-                            weight="bold",
-                            size=tamano_opcion,
-                            color="#6A0404",
-                        ),
-                        ft.Icon(ft.Icons.CHECK_CIRCLE, color="#6A0404", size=18),
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                ),
-                ft.Text(
-                    "35-45 min",
-                    size=12 if es_movil else 11,
-                    color="#806B63",
-                    text_align=ft.TextAlign.CENTER,
-                ),
-            ], spacing=4),
-            on_click=lambda e: self.seleccionar_metodo(True)
+            on_click=lambda e: self.seleccionar_metodo(True),
         )
 
         self.btn_tienda = ft.Container(
@@ -234,43 +265,41 @@ class SolicitudDatosView(ft.Column):
             height=78 if es_movil else 72,
             bgcolor="#FAF8F6",
             border_radius=14,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#E9DED7"),
-                bottom=ft.BorderSide(1, "#E9DED7"),
-                left=ft.BorderSide(1, "#E9DED7"),
-                right=ft.BorderSide(1, "#E9DED7"),
+            border=ft.Border.all(1, "#E9DED7"),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.STORE,
+                                color="#806B63",
+                                size=20 if es_movil else 18,
+                            ),
+                            ft.Text(
+                                "En Tienda",
+                                weight="bold",
+                                size=tamano_opcion,
+                                color="#806B63",
+                            ),
+                            ft.Icon(
+                                ft.Icons.CHECK_CIRCLE,
+                                color="#6A0404",
+                                size=18,
+                                visible=False,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    ft.Text(
+                        "Listo en 30 min",
+                        size=12 if es_movil else 11,
+                        color="#806B63",
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                ],
+                spacing=4,
             ),
-            content=ft.Column([
-                ft.Row(
-                    [
-                        ft.Icon(
-                            ft.Icons.STORE,
-                            color="#806B63",
-                            size=20 if es_movil else 18,
-                        ),
-                        ft.Text(
-                            "En Tienda",
-                            weight="bold",
-                            size=tamano_opcion,
-                            color="#806B63",
-                        ),
-                        ft.Icon(
-                            ft.Icons.CHECK_CIRCLE,
-                            color="#6A0404",
-                            size=18,
-                            visible=False,
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                ),
-                ft.Text(
-                    "Listo en 30 min",
-                    size=12 if es_movil else 11,
-                    color="#806B63",
-                    text_align=ft.TextAlign.CENTER,
-                ),
-            ], spacing=4),
-            on_click=lambda e: self.seleccionar_metodo(False)
+            on_click=lambda e: self.seleccionar_metodo(False),
         )
 
         filas_resumen = []
@@ -281,16 +310,19 @@ class SolicitudDatosView(ft.Column):
                 total_item = item["cantidad"] * item["precio"]
                 subtotal += total_item
                 filas_resumen.append(
-                    ft.Row([
-                        ft.Text(
-                            f"{item['cantidad']}x {item['nombre']}",
-                            size=tamano_resumen,
-                        ),
-                        ft.Text(
-                            f"${total_item:.2f}",
-                            size=tamano_resumen,
-                        ),
-                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                    ft.Row(
+                        [
+                            ft.Text(
+                                f"{item['cantidad']}x {item['nombre']}",
+                                size=tamano_resumen,
+                            ),
+                            ft.Text(
+                                f"${total_item:.2f}",
+                                size=tamano_resumen,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    )
                 )
 
         costo_envio = 35.00
@@ -323,74 +355,87 @@ class SolicitudDatosView(ft.Column):
             padding=padding_panel,
             bgcolor="#FFF8F2",
             border_radius=16,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#F0D8CA"),
-                bottom=ft.BorderSide(1, "#F0D8CA"),
-                left=ft.BorderSide(1, "#F0D8CA"),
-                right=ft.BorderSide(1, "#F0D8CA"),
-            ),
+            border=ft.Border.all(1, "#F0D8CA"),
             shadow=ft.BoxShadow(
                 blur_radius=12,
                 color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
                 offset=ft.Offset(0, 4),
             ),
-            content=ft.Column([
-                ft.Text(
-                    "Resumen del Pedido",
-                    size=tamano_total,
-                    weight="bold",
-                    color="#6A0404",
-                ),
-                ft.Divider(height=5),
-                *filas_resumen,
-                ft.Divider(height=5),
-                ft.Row(
-                    [
-                        ft.Text(
-                            "Subtotal",
-                            size=tamano_resumen,
-                        ),
-                        ft.Text(
-                            f"${subtotal:.2f}",
-                            size=tamano_resumen,
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
-                self.fila_costo_envio,
-                ft.Divider(height=5),
-                ft.Row(
-                    [
-                        ft.Text(
-                            "Total a Pagar",
-                            size=tamano_total,
-                            weight="bold",
-                        ),
-                        self.lbl_total,
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
-            ], spacing=5)
+            content=ft.Column(
+                [
+                    ft.Text(
+                        "Resumen del Pedido",
+                        size=tamano_total,
+                        weight="bold",
+                        color="#6A0404",
+                    ),
+                    ft.Divider(height=5),
+                    *filas_resumen,
+                    ft.Divider(height=5),
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Subtotal",
+                                size=tamano_resumen,
+                            ),
+                            ft.Text(
+                                f"${subtotal:.2f}",
+                                size=tamano_resumen,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    self.fila_costo_envio,
+                    ft.Divider(height=5),
+                    ft.Row(
+                        [
+                            ft.Text(
+                                "Total a Pagar",
+                                size=tamano_total,
+                                weight="bold",
+                            ),
+                            self.lbl_total,
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                ],
+                spacing=5,
+            ),
         )
 
         self.controls = [
             ft.Container(
-                content=ft.Row([
-                    ft.TextButton(
-                        content=ft.Row([ft.Icon(ft.Icons.ARROW_BACK, size=16, color="#6A0404"), ft.Text("", color="#6A0404", weight="bold")], spacing=2),
-                        on_click=lambda e: self.on_regresar(),
-                        style=ft.ButtonStyle(padding=5)
-                    ),
-                    ft.Text(
-                        "DETALLES DEL PEDIDO",
-                        size=14,
-                        weight="bold",
-                        color="#6A0404",
-                    ),
-                    ft.Container(width=50)
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                content=ft.Row(
+                    [
+                        ft.TextButton(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(
+                                        ft.Icons.ARROW_BACK,
+                                        size=16,
+                                        color="#6A0404",
+                                    ),
+                                    ft.Text(
+                                        "", color="#6A0404", weight="bold"
+                                    ),
+                                ],
+                                spacing=2,
+                            ),
+                            on_click=lambda e: self.on_regresar(),
+                            style=ft.ButtonStyle(padding=5),
+                        ),
+                        ft.Text(
+                            "DETALLES DEL PEDIDO",
+                            size=14,
+                            weight="bold",
+                            color="#6A0404",
+                        ),
+                        ft.Container(width=50),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
                 padding=5,
-                bgcolor="#FEEFE5D8"
+                bgcolor="#FEEFE5D8",
             ),
             ft.Container(
                 expand=True,
@@ -425,7 +470,9 @@ class SolicitudDatosView(ft.Column):
                                                 controls=[
                                                     ft.Text(
                                                         "Tipos de servicio",
-                                                        size=18 if es_movil else 16,
+                                                        size=18
+                                                        if es_movil
+                                                        else 16,
                                                         weight=ft.FontWeight.BOLD,
                                                         color=ft.Colors.BLACK_87,
                                                     ),
@@ -443,7 +490,9 @@ class SolicitudDatosView(ft.Column):
                                                 controls=[
                                                     ft.Text(
                                                         "Datos de contacto",
-                                                        size=18 if es_movil else 16,
+                                                        size=18
+                                                        if es_movil
+                                                        else 16,
                                                         weight=ft.FontWeight.BOLD,
                                                         color="#6A0404",
                                                     ),
@@ -471,19 +520,27 @@ class SolicitudDatosView(ft.Column):
                                             ),
                                             self.campos_direccion,
                                             self.campos_hora_recoleccion,
-                                            ft.Divider(color=ft.Colors.GREY_400),
+                                            ft.Divider(
+                                                color=ft.Colors.GREY_400
+                                            ),
                                             self.lbl_error,
                                             ft.Row(
                                                 [
                                                     ft.OutlinedButton(
                                                         content=ft.Text(
                                                             "Cancelar",
-                                                            size=16 if es_movil else 14,
+                                                            size=16
+                                                            if es_movil
+                                                            else 14,
                                                             color=ft.Colors.RED_900,
                                                             weight="bold",
                                                         ),
-                                                        width=150 if es_movil else 140,
-                                                        height=48 if es_movil else 44,
+                                                        width=150
+                                                        if es_movil
+                                                        else 140,
+                                                        height=48
+                                                        if es_movil
+                                                        else 44,
                                                         style=ft.ButtonStyle(
                                                             side=ft.BorderSide(
                                                                 1,
@@ -495,13 +552,19 @@ class SolicitudDatosView(ft.Column):
                                                     ft.FilledButton(
                                                         content=ft.Text(
                                                             "Continuar",
-                                                            size=16 if es_movil else 14,
+                                                            size=16
+                                                            if es_movil
+                                                            else 14,
                                                             color=ft.Colors.WHITE,
                                                             weight="bold",
                                                         ),
                                                         bgcolor="#6A0404",
-                                                        width=150 if es_movil else 140,
-                                                        height=48 if es_movil else 44,
+                                                        width=150
+                                                        if es_movil
+                                                        else 140,
+                                                        height=48
+                                                        if es_movil
+                                                        else 44,
                                                         on_click=self.continuar,
                                                     ),
                                                 ],
@@ -515,10 +578,10 @@ class SolicitudDatosView(ft.Column):
                             ],
                         ),
                         ft.Container(height=20),
-                    ]
+                    ],
                 ),
-                padding=10
-            )
+                padding=10,
+            ),
         ]
         if es_movil:
             self.controls[1] = ft.Container(
@@ -642,12 +705,7 @@ class SolicitudDatosView(ft.Column):
         color_borde = "#6A0404" if seleccionado else "#E9DED7"
         grosor_borde = 2 if seleccionado else 1
         boton.bgcolor = "#FFF4EC" if seleccionado else "#FAF8F6"
-        boton.border = ft.Border(
-            top=ft.BorderSide(grosor_borde, color_borde),
-            bottom=ft.BorderSide(grosor_borde, color_borde),
-            left=ft.BorderSide(grosor_borde, color_borde),
-            right=ft.BorderSide(grosor_borde, color_borde),
-        )
+        boton.border = ft.Border.all(grosor_borde, color_borde)
         boton.content.controls[0].controls[0].color = color
         boton.content.controls[0].controls[1].color = color
         boton.content.controls[0].controls[2].visible = seleccionado
@@ -676,7 +734,9 @@ class SolicitudDatosView(ft.Column):
         self.horarios_recoleccion = self.generar_horarios_recoleccion()
         self.selector_hora_recoleccion.options = self.crear_opciones_horarios()
         self.selector_hora_recoleccion.value = None
-        self.selector_hora_recoleccion.visible = bool(self.horarios_recoleccion)
+        self.selector_hora_recoleccion.visible = bool(
+            self.horarios_recoleccion
+        )
         self.aviso_sin_horarios.visible = not self.horarios_recoleccion
         self.datos_pedido["hora_recoleccion"] = None
 
@@ -745,9 +805,8 @@ class SolicitudDatosView(ft.Column):
                 "Elige A Domicilio para continuar."
             )
         else:
-            ahora_minuto = datetime.now().astimezone().replace(
-                second=0,
-                microsecond=0,
+            ahora_minuto = (
+                datetime.now().astimezone().replace(second=0, microsecond=0)
             )
             hora_recoleccion = datetime.fromisoformat(
                 self.datos_pedido["hora_recoleccion"]
@@ -760,9 +819,13 @@ class SolicitudDatosView(ft.Column):
                     "Selecciona otro horario para continuar."
                 )
         if faltantes:
-            errores.append(f"Completa los siguientes campos: {', '.join(faltantes)}.")
+            errores.append(
+                f"Completa los siguientes campos: {', '.join(faltantes)}."
+            )
         if nombre and not nombre_valido(nombre):
-            errores.append("El nombre solo debe contener letras, espacios, guiones o apóstrofos.")
+            errores.append(
+                "El nombre solo debe contener letras, espacios, guiones o apóstrofos."
+            )
         if telefono and not telefono_valido(telefono):
             errores.append("El teléfono debe contener exactamente 10 dígitos.")
         if correo and not correo_valido(correo):
@@ -774,8 +837,16 @@ class SolicitudDatosView(ft.Column):
 
         self.lbl_error.value = ""
         self.datos_pedido["nombre_contacto"] = nombre
-        self.datos_pedido["direccion"] = direccion if self.datos_pedido["tipo_servicio"] == "A Domicilio" else ""
-        self.datos_pedido["referencias"] = referencias if self.datos_pedido["tipo_servicio"] == "A Domicilio" else ""
+        self.datos_pedido["direccion"] = (
+            direccion
+            if self.datos_pedido["tipo_servicio"] == "A Domicilio"
+            else ""
+        )
+        self.datos_pedido["referencias"] = (
+            referencias
+            if self.datos_pedido["tipo_servicio"] == "A Domicilio"
+            else ""
+        )
         self.on_continuar_pago(self.datos_pedido)
 
     def mostrar_alerta_validacion(self, mensaje):
@@ -811,6 +882,13 @@ class SolicitudDatosView(ft.Column):
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 tight=True,
             )
+
+            def cerrar_alerta(_):
+                try:
+                    page.pop_dialog()
+                except RuntimeError:
+                    pass
+
             alerta = ft.AlertDialog(
                 modal=True,
                 bgcolor=ft.Colors.WHITE,
@@ -844,10 +922,15 @@ class SolicitudDatosView(ft.Column):
                                 bottom=12,
                             ),
                         ),
-                        on_click=lambda e: page.pop_dialog(),
+                        on_click=cerrar_alerta,
                     )
                 ],
                 actions_alignment=ft.MainAxisAlignment.CENTER,
                 actions_padding=ft.Padding(left=20, top=8, right=20, bottom=20),
             )
-            page.show_dialog(alerta)
+            try:
+                page.show_dialog(alerta)
+            except RuntimeError as error:
+                if "Dialog is already opened" in str(error):
+                    page.pop_dialog()
+                    page.show_dialog(alerta)

@@ -19,6 +19,16 @@ class VendedorView(ft.Column):
         self._generacion_actualizacion = 0
         self.spacing = 12
         self.expand = True
+        borde_campo = {
+            ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(1, "#E7C8B8"),
+            ),
+            ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                border_radius=12,
+                side=ft.BorderSide(2, "#6A0404"),
+            ),
+        }
         self.lbl_total = ft.Text(
             "$0.00",
             size=24 if es_movil else 28,
@@ -45,7 +55,7 @@ class VendedorView(ft.Column):
             prefix_icon=ft.Icons.QR_CODE_SCANNER,
             autofocus=True,
             on_submit=self.buscar_pedido_por_codigo,
-            border_radius=12,
+            border=borde_campo,
             filled=True,
             fill_color=ft.Colors.WHITE,
         )
@@ -70,6 +80,9 @@ class VendedorView(ft.Column):
             label="Nombre completo del cliente",
             expand=not es_movil,
             text_size=17 if not es_movil else 16,
+            border=borde_campo,
+            filled=True,
+            fill_color=ft.Colors.WHITE,
         )
         self.txt_telefono = ft.TextField(
             label="Teléfono de contacto (10 dígitos)",
@@ -78,6 +91,9 @@ class VendedorView(ft.Column):
             max_length=10,
             visible=False,
             expand=not es_movil,
+            border=borde_campo,
+            filled=True,
+            fill_color=ft.Colors.WHITE,
         )
         self.lbl_aviso_telefono = ft.Text(
             "El teléfono se guarda para contacto; todavía no se envían SMS.",
@@ -189,6 +205,7 @@ class VendedorView(ft.Column):
             label="Nombre del Titular",
             text_size=tamano_texto,
             height=alto_campo,
+            border=borde_campo,
         )
         self.txt_tarjeta = ft.TextField(
             label="Número de Tarjeta",
@@ -198,6 +215,7 @@ class VendedorView(ft.Column):
             max_length=23,
             text_size=tamano_texto,
             height=alto_campo,
+            border=borde_campo,
             on_change=self.formatear_numero_tarjeta,
         )
         self.txt_exp = ft.TextField(
@@ -209,6 +227,7 @@ class VendedorView(ft.Column):
             text_size=tamano_texto,
             height=alto_campo,
             expand=True,
+            border=borde_campo,
             on_change=self.formatear_vencimiento,
         )
         self.txt_cvv = ft.TextField(
@@ -219,24 +238,22 @@ class VendedorView(ft.Column):
             text_size=tamano_texto,
             height=alto_campo,
             expand=True,
+            border=borde_campo,
         )
         self.info_pago = ft.Container(
             padding=12,
             bgcolor="#FFF8F2",
             border_radius=12,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#F0D8CA"),
-                bottom=ft.BorderSide(1, "#F0D8CA"),
-                left=ft.BorderSide(1, "#F0D8CA"),
-                right=ft.BorderSide(1, "#F0D8CA"),
-            ),
+            border=ft.Border.all(1, "#F0D8CA"),
             content=ft.Column(
                 spacing=8,
                 controls=[
                     ft.Row(
                         spacing=8,
                         controls=[
-                            ft.Icon(ft.Icons.LOCK_OUTLINE, size=18, color="#6A0404"),
+                            ft.Icon(
+                                ft.Icons.LOCK_OUTLINE, size=18, color="#6A0404"
+                            ),
                             ft.Text(
                                 "Pago de demostración: no hay pasarela conectada",
                                 size=14,
@@ -249,7 +266,12 @@ class VendedorView(ft.Column):
                     ft.Row(
                         spacing=8,
                         controls=[
-                            ft.Text(marca, size=14, weight=ft.FontWeight.BOLD, color=color)
+                            ft.Text(
+                                marca,
+                                size=14,
+                                weight=ft.FontWeight.BOLD,
+                                color=color,
+                            )
                             for marca, color in (
                                 ("VISA", "#1A1F71"),
                                 ("Mastercard", "#EB001B"),
@@ -408,8 +430,16 @@ class VendedorView(ft.Column):
             selected=["Efectivo"],
             allow_multiple_selection=False,
             segments=[
-                ft.Segment(value="Efectivo", label=ft.Text("Efectivo"), icon=ft.Icon(ft.Icons.PAYMENTS)),
-                ft.Segment(value="Tarjeta", label=ft.Text("Tarjeta"), icon=ft.Icon(ft.Icons.CREDIT_CARD)),
+                ft.Segment(
+                    value="Efectivo",
+                    label=ft.Text("Efectivo"),
+                    icon=ft.Icon(ft.Icons.PAYMENTS),
+                ),
+                ft.Segment(
+                    value="Tarjeta",
+                    label=ft.Text("Tarjeta"),
+                    icon=ft.Icon(ft.Icons.CREDIT_CARD),
+                ),
             ],
             on_change=self.cambiar_metodo_pago,
         )
@@ -418,9 +448,15 @@ class VendedorView(ft.Column):
             keyboard_type=ft.KeyboardType.NUMBER,
             input_filter=ft.InputFilter(allow=True, regex_string=r"[0-9.]*"),
             expand=True,
+            border=borde_campo,
             on_change=self.calcular_cambio,
         )
-        self.lbl_cambio = ft.Text("Cambio: $0.00", size=18, weight=ft.FontWeight.BOLD, color="#28734D")
+        self.lbl_cambio = ft.Text(
+            "Cambio: $0.00",
+            size=18,
+            weight=ft.FontWeight.BOLD,
+            color="#28734D",
+        )
         self.lbl_error_pago = ft.Text("", size=15, color="#8A3B2E")
         self.boton_finalizar_pago = ft.FilledButton(
             "Registrar pago y pedido",
@@ -502,13 +538,20 @@ class VendedorView(ft.Column):
                         alignment=ft.Alignment.CENTER,
                         bgcolor=ft.Colors.WHITE,
                         border_radius=14,
-                        content=ft.Icon(ft.Icons.CREDIT_CARD, color="#6A0404", size=25),
+                        content=ft.Icon(
+                            ft.Icons.CREDIT_CARD, color="#6A0404", size=25
+                        ),
                     ),
                     ft.Column(
                         spacing=1,
                         expand=True,
                         controls=[
-                            ft.Text(titulo, size=17, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                            ft.Text(
+                                titulo,
+                                size=17,
+                                weight=ft.FontWeight.BOLD,
+                                color=ft.Colors.WHITE,
+                            ),
                             ft.Text(subtitulo, size=14, color="#F8E8E0"),
                         ],
                     ),
@@ -516,7 +559,12 @@ class VendedorView(ft.Column):
                         spacing=1,
                         horizontal_alignment=ft.CrossAxisAlignment.END,
                         controls=[
-                            ft.Text("TOTAL", size=14, weight=ft.FontWeight.BOLD, color="#F8E8E0"),
+                            ft.Text(
+                                "TOTAL",
+                                size=14,
+                                weight=ft.FontWeight.BOLD,
+                                color="#F8E8E0",
+                            ),
                             self.total_accion_pago,
                         ],
                     ),
@@ -532,7 +580,9 @@ class VendedorView(ft.Column):
             border=ft.Border.all(1, "#E8D8CF"),
             border_radius=14,
             ink=True,
-            on_click=lambda e, valor=valor or servicio: self.seleccionar_servicio(valor),
+            on_click=lambda e, valor=valor or servicio: self.seleccionar_servicio(
+                valor
+            ),
             content=ft.Row(
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -543,11 +593,15 @@ class VendedorView(ft.Column):
                         expand=True,
                         tight=True,
                         controls=[
-                            ft.Text(servicio, weight=ft.FontWeight.BOLD, size=15),
+                            ft.Text(
+                                servicio, weight=ft.FontWeight.BOLD, size=15
+                            ),
                             ft.Text(descripcion, size=15, color="#806B63"),
                         ],
                     ),
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color="#28734D", visible=False),
+                    ft.Icon(
+                        ft.Icons.CHECK_CIRCLE, color="#28734D", visible=False
+                    ),
                 ],
             ),
         )
@@ -560,12 +614,19 @@ class VendedorView(ft.Column):
             content=ft.Column(
                 spacing=8,
                 controls=[
-                    ft.Text("Resumen del pedido", size=17, weight=ft.FontWeight.BOLD, color="#3F302B"),
+                    ft.Text(
+                        "Resumen del pedido",
+                        size=17,
+                        weight=ft.FontWeight.BOLD,
+                        color="#3F302B",
+                    ),
                     self.lista_resumen_pago,
                     ft.Divider(height=1, color="#F1E5DE"),
                     ft.Row(
                         [
-                            ft.Text("Total", size=18, weight=ft.FontWeight.BOLD),
+                            ft.Text(
+                                "Total", size=18, weight=ft.FontWeight.BOLD
+                            ),
                             self.lbl_total_pago,
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -579,21 +640,39 @@ class VendedorView(ft.Column):
             return
         self.paso_checkout = "servicio"
         self.construir_pantalla_servicio()
-        self.page.show_dialog(self.dialogo_checkout)
+        if self.page is not None:
+            try:
+                self.page.show_dialog(self.dialogo_checkout)
+            except RuntimeError as error:
+                if "Dialog is already opened" in str(error):
+                    self.page.pop_dialog()
+                    self.page.show_dialog(self.dialogo_checkout)
 
     def cerrar_checkout(self, e=None):
         if self.page is not None:
-            self.page.pop_dialog()
+            try:
+                self.page.pop_dialog()
+            except RuntimeError:
+                pass
 
     def construir_pantalla_servicio(self):
         controles = [
-            ft.Text("Confirma tu pedido", size=22, weight=ft.FontWeight.BOLD, color="#6A0404"),
+            ft.Text(
+                "Confirma tu pedido",
+                size=22,
+                weight=ft.FontWeight.BOLD,
+                color="#6A0404",
+            ),
             self.crear_resumen_checkout(),
         ]
         if not self.selector_servicio.value:
             controles.extend(
                 [
-                    ft.Text("Primero, selecciona el tipo de servicio", size=16, weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        "Primero, selecciona el tipo de servicio",
+                        size=16,
+                        weight=ft.FontWeight.BOLD,
+                    ),
                     ft.Column(
                         controls=[self.tarjeta_comer, self.tarjeta_recoger],
                         spacing=10,
@@ -642,19 +721,39 @@ class VendedorView(ft.Column):
                 ]
             )
         self.contenido_pago.controls = controles
-        self.tarjeta_comer.content.controls[2].visible = self.selector_servicio.value == "Comer en tienda"
-        self.tarjeta_recoger.content.controls[2].visible = self.selector_servicio.value == "Para recoger en tienda"
+        self.tarjeta_comer.content.controls[2].visible = (
+            self.selector_servicio.value == "Comer en tienda"
+        )
+        self.tarjeta_recoger.content.controls[2].visible = (
+            self.selector_servicio.value == "Para recoger en tienda"
+        )
         self.actualizar_contenido_pago()
 
     def seleccionar_servicio(self, servicio):
         self.selector_servicio.value = servicio
         self.cambiar_servicio(None)
-        self.tarjeta_comer.bgcolor = "#FFF1E7" if servicio == "Comer en tienda" else ft.Colors.WHITE
-        self.tarjeta_recoger.bgcolor = "#FFF1E7" if servicio == "Para recoger en tienda" else ft.Colors.WHITE
-        self.tarjeta_comer.border = ft.Border.all(2 if servicio == "Comer en tienda" else 1, "#6A0404" if servicio == "Comer en tienda" else "#E8D8CF")
-        self.tarjeta_recoger.border = ft.Border.all(2 if servicio == "Para recoger en tienda" else 1, "#6A0404" if servicio == "Para recoger en tienda" else "#E8D8CF")
-        self.tarjeta_comer.content.controls[2].visible = servicio == "Comer en tienda"
-        self.tarjeta_recoger.content.controls[2].visible = servicio == "Para recoger en tienda"
+        self.tarjeta_comer.bgcolor = (
+            "#FFF1E7" if servicio == "Comer en tienda" else ft.Colors.WHITE
+        )
+        self.tarjeta_recoger.bgcolor = (
+            "#FFF1E7"
+            if servicio == "Para recoger en tienda"
+            else ft.Colors.WHITE
+        )
+        self.tarjeta_comer.border = ft.Border.all(
+            2 if servicio == "Comer en tienda" else 1,
+            "#6A0404" if servicio == "Comer en tienda" else "#E8D8CF",
+        )
+        self.tarjeta_recoger.border = ft.Border.all(
+            2 if servicio == "Para recoger en tienda" else 1,
+            "#6A0404" if servicio == "Para recoger en tienda" else "#E8D8CF",
+        )
+        self.tarjeta_comer.content.controls[2].visible = (
+            servicio == "Comer en tienda"
+        )
+        self.tarjeta_recoger.content.controls[2].visible = (
+            servicio == "Para recoger en tienda"
+        )
         self.lbl_error_pago.value = ""
         self.construir_pantalla_servicio()
 
@@ -675,7 +774,9 @@ class VendedorView(ft.Column):
             len((self.txt_telefono.value or "").strip()) != 10
             or not (self.txt_telefono.value or "").strip().isdigit()
         ):
-            self.lbl_error_pago.value = "Para recoger se requiere un teléfono de 10 dígitos."
+            self.lbl_error_pago.value = (
+                "Para recoger se requiere un teléfono de 10 dígitos."
+            )
         else:
             self.paso_checkout = "pago"
             self.construir_pantalla_metodo_pago()
@@ -684,12 +785,22 @@ class VendedorView(ft.Column):
 
     def construir_pantalla_metodo_pago(self):
         self.contenido_pago.controls = [
-            ft.Text("Selecciona el método de pago", size=22, weight=ft.FontWeight.BOLD, color="#6A0404"),
+            ft.Text(
+                "Selecciona el método de pago",
+                size=22,
+                weight=ft.FontWeight.BOLD,
+                color="#6A0404",
+            ),
             self.crear_resumen_checkout(),
             self.selector_metodo_pago,
             ft.Row(
                 [
-                    ft.Text("$", size=22, weight=ft.FontWeight.BOLD, color="#6A0404"),
+                    ft.Text(
+                        "$",
+                        size=22,
+                        weight=ft.FontWeight.BOLD,
+                        color="#6A0404",
+                    ),
                     self.txt_efectivo_recibido,
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -702,7 +813,10 @@ class VendedorView(ft.Column):
             ft.Row([self.txt_exp, self.txt_cvv], spacing=10),
             self.lbl_error_pago,
             self.boton_finalizar_pago,
-            ft.TextButton("Volver a datos del pedido", on_click=self.volver_a_datos_pedido),
+            ft.TextButton(
+                "Volver a datos del pedido",
+                on_click=self.volver_a_datos_pedido,
+            ),
         ]
         self.actualizar_campos_metodo_pago()
         self.actualizar_contenido_pago()
@@ -730,7 +844,9 @@ class VendedorView(ft.Column):
 
     def calcular_cambio(self, e):
         try:
-            recibido = float((self.txt_efectivo_recibido.value or "0").strip() or 0)
+            recibido = float(
+                (self.txt_efectivo_recibido.value or "0").strip() or 0
+            )
         except ValueError:
             recibido = 0
         total = sum(
@@ -770,18 +886,26 @@ class VendedorView(ft.Column):
                     content=ft.Container(
                         padding=ft.Padding(left=18, top=8, right=18, bottom=8),
                         border_radius=24,
-                        bgcolor=ft.Colors.WHITE if seleccionado else ft.Colors.TRANSPARENT,
+                        bgcolor=ft.Colors.WHITE
+                        if seleccionado
+                        else ft.Colors.TRANSPARENT,
                         content=ft.Column(
                             controls=[
                                 ft.Icon(
-                                    icono_seleccionado if seleccionado else icono,
+                                    icono_seleccionado
+                                    if seleccionado
+                                    else icono,
                                     size=28 if seleccionado else 26,
-                                    color="#6A0404" if seleccionado else "#FFE9DF",
+                                    color="#6A0404"
+                                    if seleccionado
+                                    else "#FFE9DF",
                                 ),
                                 ft.Text(
                                     etiqueta,
                                     size=15 if seleccionado else 14,
-                                    color="#6A0404" if seleccionado else "#FFE9DF",
+                                    color="#6A0404"
+                                    if seleccionado
+                                    else "#FFE9DF",
                                     weight=(
                                         ft.FontWeight.BOLD
                                         if seleccionado
@@ -794,7 +918,9 @@ class VendedorView(ft.Column):
                             tight=True,
                         ),
                     ),
-                    on_click=lambda e, indice=indice: self.cambiar_seccion(indice),
+                    on_click=lambda e, indice=indice: self.cambiar_seccion(
+                        indice
+                    ),
                 )
             )
         return ft.Container(
@@ -827,6 +953,10 @@ class VendedorView(ft.Column):
             return
 
     def buscar_pedido_por_codigo(self, e):
+        if self.page is not None:
+            self.page.run_task(self._buscar_pedido_async, e)
+
+    async def _buscar_pedido_async(self, e):
         codigo = (self.txt_codigo_pedido.value or "").strip().upper()
         self.lbl_estado_entrega.value = ""
         self.pedido_entrega_actual = None
@@ -834,12 +964,15 @@ class VendedorView(ft.Column):
         self.id_pedido_encontrado = None
         self.detalle_pedido_entrega.controls = []
         if not codigo:
-            self.lbl_estado_entrega.value = "Escanea o escribe el código del pedido."
+            self.lbl_estado_entrega.value = (
+                "Escanea o escribe el código del pedido."
+            )
             self.actualizar_estado_entrega()
             return
 
         try:
-            respuesta = requests.get(
+            respuesta = await asyncio.to_thread(
+                requests.get,
                 f"{BASE_URL}/api/personal/pedidos/codigo/{codigo}",
                 headers={
                     "Authorization": f"Bearer {self.personal['token']}",
@@ -847,12 +980,16 @@ class VendedorView(ft.Column):
                 timeout=15,
             )
         except requests.RequestException:
-            self.lbl_estado_entrega.value = "No se pudo conectar con el servidor."
+            self.lbl_estado_entrega.value = (
+                "No se pudo conectar con el servidor."
+            )
             self.actualizar_estado_entrega()
             return
 
         if respuesta.status_code == 404:
-            pedido = self.buscar_pedido_en_historial_vendedor(codigo)
+            pedido = await asyncio.to_thread(
+                self.buscar_pedido_en_historial_vendedor, codigo
+            )
             if pedido is not None:
                 self.codigo_pedido_encontrado = pedido["codigo"]
                 self.id_pedido_encontrado = pedido["id_pedido"]
@@ -931,13 +1068,17 @@ class VendedorView(ft.Column):
                     ),
                     ft.Container(
                         padding=ft.Padding(left=10, top=5, right=10, bottom=5),
-                        bgcolor="#E8F4EC" if estado == "Finalizada" else "#FFF1E7",
+                        bgcolor="#E8F4EC"
+                        if estado == "Finalizada"
+                        else "#FFF1E7",
                         border_radius=18,
                         content=ft.Text(
                             estado,
                             size=14,
                             weight=ft.FontWeight.BOLD,
-                            color="#28734D" if estado == "Finalizada" else "#9A541D",
+                            color="#28734D"
+                            if estado == "Finalizada"
+                            else "#9A541D",
                         ),
                     ),
                 ],
@@ -1018,12 +1159,17 @@ class VendedorView(ft.Column):
         self.actualizar_estado_entrega()
 
     def confirmar_entrega_pedido(self, e):
+        if self.page is not None:
+            self.page.run_task(self._confirmar_entrega_async, e)
+
+    async def _confirmar_entrega_async(self, e):
         if not self.codigo_pedido_encontrado:
             self.lbl_estado_entrega.value = "Primero busca un pedido válido."
             self.actualizar_estado_entrega()
             return
         try:
-            respuesta = requests.patch(
+            respuesta = await asyncio.to_thread(
+                requests.patch,
                 f"{BASE_URL}/api/personal/pedidos/codigo/"
                 f"{self.codigo_pedido_encontrado}/entregar",
                 headers={
@@ -1032,13 +1178,19 @@ class VendedorView(ft.Column):
                 timeout=15,
             )
         except requests.RequestException:
-            self.lbl_estado_entrega.value = "No se pudo conectar con el servidor."
+            self.lbl_estado_entrega.value = (
+                "No se pudo conectar con el servidor."
+            )
             self.actualizar_estado_entrega()
             return
 
-        if respuesta.status_code == 404 and self.id_pedido_encontrado is not None:
+        if (
+            respuesta.status_code == 404
+            and self.id_pedido_encontrado is not None
+        ):
             try:
-                respuesta = requests.patch(
+                respuesta = await asyncio.to_thread(
+                    requests.patch,
                     f"{BASE_URL}/api/personal/pedidos/"
                     f"{self.id_pedido_encontrado}/estado",
                     json={"estado": "Finalizada"},
@@ -1048,7 +1200,9 @@ class VendedorView(ft.Column):
                     timeout=15,
                 )
             except requests.RequestException:
-                self.lbl_estado_entrega.value = "No se pudo conectar con el servidor."
+                self.lbl_estado_entrega.value = (
+                    "No se pudo conectar con el servidor."
+                )
                 self.actualizar_estado_entrega()
                 return
 
@@ -1066,7 +1220,7 @@ class VendedorView(ft.Column):
             return
 
         self.cargar_pedidos(None)
-        self.buscar_pedido_por_codigo(None)
+        await self._buscar_pedido_async(None)
         self.lbl_estado_entrega.value = "Pedido entregado y finalizado."
         self.actualizar_estado_entrega()
 
@@ -1080,11 +1234,13 @@ class VendedorView(ft.Column):
             return
 
     async def abrir_escaner_camara(self, e):
-        if not self.es_movil:
+        if not self.es_movil or self.dialogo_escaner is not None:
             return
 
         try:
-            permiso = await fph.PermissionHandler().request(fph.Permission.CAMERA)
+            permiso = await fph.PermissionHandler().request(
+                fph.Permission.CAMERA
+            )
         except RuntimeError:
             self.lbl_estado_entrega.value = (
                 "No se pudo solicitar permiso para usar la cámara."
@@ -1109,12 +1265,7 @@ class VendedorView(ft.Column):
                 content=ft.Container(
                     width=280,
                     height=100,
-                    border=ft.Border(
-                        top=ft.BorderSide(2, ft.Colors.WHITE),
-                        bottom=ft.BorderSide(2, ft.Colors.WHITE),
-                        left=ft.BorderSide(2, ft.Colors.WHITE),
-                        right=ft.BorderSide(2, ft.Colors.WHITE),
-                    ),
+                    border=ft.Border.all(2, ft.Colors.WHITE),
                     border_radius=12,
                 ),
             ),
@@ -1122,6 +1273,7 @@ class VendedorView(ft.Column):
         self.dialogo_escaner = ft.AlertDialog(
             modal=True,
             title=ft.Text("Escanear pedido", color="#6A0404"),
+            on_dismiss=self.cerrar_escaner_camara,
             content=ft.Container(
                 width=320,
                 content=ft.Column(
@@ -1153,7 +1305,11 @@ class VendedorView(ft.Column):
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.show_dialog(self.dialogo_escaner)
+        try:
+            self.page.show_dialog(self.dialogo_escaner)
+        except RuntimeError:
+            self.cerrar_escaner_camara()
+            return
 
         camara = self.camara_entrega
         try:
@@ -1161,7 +1317,9 @@ class VendedorView(ft.Column):
             if self.dialogo_escaner is None:
                 return
             if not camaras:
-                self.lbl_estado_escaner.value = "No se encontró una cámara disponible."
+                self.lbl_estado_escaner.value = (
+                    "No se encontró una cámara disponible."
+                )
                 self.dialogo_escaner.update()
                 return
 
@@ -1194,11 +1352,16 @@ class VendedorView(ft.Column):
             )
             self.dialogo_escaner.update()
 
-    def cerrar_escaner_camara(self, e):
+    def cerrar_escaner_camara(self, e=None):
+        dialogo_activo = self.dialogo_escaner
         self.camara_entrega = None
         self.dialogo_escaner = None
         self._escaneo_en_proceso = False
-        self.page.pop_dialog()
+        if dialogo_activo is not None and self.page is not None:
+            try:
+                self.page.pop_dialog()
+            except RuntimeError:
+                pass
 
     async def capturar_codigo_pedido(self, e):
         camara = self.camara_entrega
@@ -1234,7 +1397,9 @@ class VendedorView(ft.Column):
             if self.dialogo_escaner is None:
                 return
             self._escaneo_en_proceso = False
-            self.lbl_estado_escaner.value = "No se pudo conectar con el servidor."
+            self.lbl_estado_escaner.value = (
+                "No se pudo conectar con el servidor."
+            )
             dialogo.update()
             return
 
@@ -1268,13 +1433,15 @@ class VendedorView(ft.Column):
         except ValueError:
             codigo = None
         if not isinstance(codigo, str):
-            self.lbl_estado_escaner.value = "El servidor devolvió un código inválido."
+            self.lbl_estado_escaner.value = (
+                "El servidor devolvió un código inválido."
+            )
             dialogo.update()
             return
 
         self.txt_codigo_pedido.value = codigo
         self.cerrar_escaner_camara(None)
-        self.buscar_pedido_por_codigo(None)
+        await self._buscar_pedido_async(None)
 
     def did_mount(self):
         self._actualizacion_activa = True
@@ -1287,6 +1454,7 @@ class VendedorView(ft.Column):
     def will_unmount(self):
         self._actualizacion_activa = False
         self._generacion_actualizacion += 1
+        self.cerrar_escaner_camara()
 
     def actualizar_total(self):
         total = sum(
@@ -1299,7 +1467,11 @@ class VendedorView(ft.Column):
             self.total_accion_pago.value = f"${total:.2f}"
         self.boton_pagar_ahora.visible = total > 0
         self.actualizar_resumen_pago()
-        controles = [self.lbl_total, self.lbl_total_pago, self.boton_pagar_ahora]
+        controles = [
+            self.lbl_total,
+            self.lbl_total_pago,
+            self.boton_pagar_ahora,
+        ]
         if hasattr(self, "total_accion_pago"):
             controles.append(self.total_accion_pago)
         for control in controles:
@@ -1330,7 +1502,13 @@ class VendedorView(ft.Column):
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             )
             for articulo in articulos
-        ] or [ft.Text("Agrega productos desde la pestaña Menú.", size=14, color="#806B63")]
+        ] or [
+            ft.Text(
+                "Agrega productos desde la pestaña Menú.",
+                size=14,
+                color="#806B63",
+            )
+        ]
         try:
             if self.lista_resumen_pago.page is not None:
                 self.lista_resumen_pago.update()
@@ -1341,9 +1519,17 @@ class VendedorView(ft.Column):
         campo = e.control
         valor = campo.value or ""
         seleccion = campo.selection
-        digitos_antes = len(
-            re.sub(r"\D", "", valor[: max(0, min(seleccion.base_offset, len(valor)))])
-        ) if seleccion and seleccion.base_offset >= 0 else len(re.sub(r"\D", "", valor))
+        digitos_antes = (
+            len(
+                re.sub(
+                    r"\D",
+                    "",
+                    valor[: max(0, min(seleccion.base_offset, len(valor)))],
+                )
+            )
+            if seleccion and seleccion.base_offset >= 0
+            else len(re.sub(r"\D", "", valor))
+        )
         digitos = re.sub(r"\D", "", valor)[:19]
         valor_formateado = " ".join(
             digitos[indice : indice + 4]
@@ -1359,9 +1545,17 @@ class VendedorView(ft.Column):
         campo = e.control
         valor = campo.value or ""
         seleccion = campo.selection
-        digitos_antes = len(
-            re.sub(r"\D", "", valor[: max(0, min(seleccion.base_offset, len(valor)))])
-        ) if seleccion and seleccion.base_offset >= 0 else len(re.sub(r"\D", "", valor))
+        digitos_antes = (
+            len(
+                re.sub(
+                    r"\D",
+                    "",
+                    valor[: max(0, min(seleccion.base_offset, len(valor)))],
+                )
+            )
+            if seleccion and seleccion.base_offset >= 0
+            else len(re.sub(r"\D", "", valor))
+        )
         digitos = re.sub(r"\D", "", valor)[:4]
         valor_formateado = (
             f"{digitos[:2]}/{digitos[2:]}" if len(digitos) > 2 else digitos
@@ -1391,35 +1585,44 @@ class VendedorView(ft.Column):
             if metodo_pago == "Efectivo"
             else f"Pedido {codigo} registrado. Pago de tarjeta de demostración."
         )
-        self.page.show_dialog(
-            ft.AlertDialog(
-                modal=True,
-                title=ft.Text("¡Pago efectuado!", color="#6A0404"),
-                content=ft.Text(detalle_pago),
-                actions=[
-                    ft.FilledButton(
-                        "Aceptar",
-                        bgcolor="#6A0404",
-                        color=ft.Colors.WHITE,
-                        on_click=lambda e: self.page.pop_dialog(),
-                    )
-                ],
-                actions_alignment=ft.MainAxisAlignment.CENTER,
+        if self.page is not None:
+            self.page.show_dialog(
+                ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("¡Pago efectuado!", color="#6A0404"),
+                    content=ft.Text(detalle_pago),
+                    actions=[
+                        ft.FilledButton(
+                            "Aceptar",
+                            bgcolor="#6A0404",
+                            color=ft.Colors.WHITE,
+                            on_click=lambda e: self.page.pop_dialog(),
+                        )
+                    ],
+                    actions_alignment=ft.MainAxisAlignment.CENTER,
+                )
             )
-        )
 
     def registrar_pedido(self, e):
+        if self.page is not None:
+            self.page.run_task(self._registrar_pedido_async, e)
+
+    async def _registrar_pedido_async(self, e):
         self.lbl_error_pago.value = ""
         nombre = (self.txt_nombre.value or "").strip()
         items = self.menu.obtener_items_estado()
         servicio = self.selector_servicio.value
         telefono = (self.txt_telefono.value or "").strip()
         if not nombre:
-            self.lbl_error_pago.value = "Escribe el nombre completo del cliente."
+            self.lbl_error_pago.value = (
+                "Escribe el nombre completo del cliente."
+            )
             self.actualizar_contenido_pago()
             return
         if not items:
-            self.lbl_error_pago.value = "Agrega al menos un producto al pedido."
+            self.lbl_error_pago.value = (
+                "Agrega al menos un producto al pedido."
+            )
             self.actualizar_contenido_pago()
             return
         if not servicio:
@@ -1429,7 +1632,9 @@ class VendedorView(ft.Column):
         if servicio == "Para recoger en tienda" and (
             len(telefono) != 10 or not telefono.isdigit()
         ):
-            self.lbl_error_pago.value = "Para recoger se requiere un teléfono de 10 dígitos."
+            self.lbl_error_pago.value = (
+                "Para recoger se requiere un teléfono de 10 dígitos."
+            )
             self.actualizar_contenido_pago()
             return
         metodo_pago = self.metodo_pago_seleccionado()
@@ -1437,11 +1642,15 @@ class VendedorView(ft.Column):
         recibido = 0.0
         if metodo_pago == "Efectivo":
             try:
-                recibido = float((self.txt_efectivo_recibido.value or "").strip())
+                recibido = float(
+                    (self.txt_efectivo_recibido.value or "").strip()
+                )
             except ValueError:
                 recibido = 0
             if recibido < total:
-                self.lbl_error_pago.value = "El efectivo recibido debe cubrir el total del pedido."
+                self.lbl_error_pago.value = (
+                    "El efectivo recibido debe cubrir el total del pedido."
+                )
                 self.actualizar_contenido_pago()
                 return
         ids_por_nombre = {
@@ -1450,7 +1659,9 @@ class VendedorView(ft.Column):
         }
         payload = {
             "nombre_contacto": nombre,
-            "telefono_contacto": telefono if servicio == "Para recoger en tienda" else "",
+            "telefono_contacto": telefono
+            if servicio == "Para recoger en tienda"
+            else "",
             "tipo_servicio": servicio,
             "metodo_pago": metodo_pago,
             "items": [
@@ -1461,20 +1672,27 @@ class VendedorView(ft.Column):
                 for item in items
             ],
         }
+        self.boton_finalizar_pago.disabled = True
+        self.actualizar_contenido_pago()
         try:
-            respuesta = requests.post(
+            respuesta = await asyncio.to_thread(
+                requests.post,
                 f"{BASE_URL}/api/personal/pedidos",
                 json=payload,
                 headers={
                     "Authorization": f"Bearer {self.personal['token']}",
                 },
-                timeout=15,
+                timeout=20,
             )
         except requests.RequestException:
-            self.lbl_error_pago.value = "No se pudo conectar con el servidor."
+            self.boton_finalizar_pago.disabled = False
+            self.lbl_error_pago.value = (
+                "No se pudo conectar con el servidor."
+            )
             self.actualizar_contenido_pago()
             return
 
+        self.boton_finalizar_pago.disabled = False
         if respuesta.status_code != 201:
             try:
                 detalle = respuesta.json().get("detail")
@@ -1594,7 +1812,9 @@ class VendedorView(ft.Column):
             acciones.append(
                 ft.OutlinedButton(
                     "Marcar listo para recoger",
-                    on_click=lambda e, pedido_id=pedido["id_pedido"]: self.cambiar_estado_pedido(
+                    on_click=lambda e, pedido_id=pedido[
+                        "id_pedido"
+                    ]: self.cambiar_estado_pedido(
                         pedido_id,
                         "Lista",
                     ),
@@ -1606,7 +1826,9 @@ class VendedorView(ft.Column):
             acciones.append(
                 ft.OutlinedButton(
                     "Finalizar pedido",
-                    on_click=lambda e, pedido_id=pedido["id_pedido"]: self.cambiar_estado_pedido(
+                    on_click=lambda e, pedido_id=pedido[
+                        "id_pedido"
+                    ]: self.cambiar_estado_pedido(
                         pedido_id,
                         "Finalizada",
                     ),
@@ -1667,14 +1889,23 @@ class VendedorView(ft.Column):
                         size=14,
                         visible=bool(pedido.get("telefono_contacto")),
                     ),
-                    ft.Row(acciones, wrap=True, spacing=8) if acciones else ft.Container(),
+                    ft.Row(acciones, wrap=True, spacing=8)
+                    if acciones
+                    else ft.Container(),
                 ],
             ),
         )
 
     def cambiar_estado_pedido(self, id_pedido, estado):
+        if self.page is not None:
+            self.page.run_task(
+                self._cambiar_estado_pedido_async, id_pedido, estado
+            )
+
+    async def _cambiar_estado_pedido_async(self, id_pedido, estado):
         try:
-            respuesta = requests.patch(
+            respuesta = await asyncio.to_thread(
+                requests.patch,
                 f"{BASE_URL}/api/personal/pedidos/{id_pedido}/estado",
                 json={"estado": estado},
                 headers={
