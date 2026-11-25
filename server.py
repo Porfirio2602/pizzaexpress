@@ -223,9 +223,11 @@ def resolver_precio_y_validar_pizza(cursor, nombre_pizza):
 
 
 def conectar_db():
-    conexion = sqlite3.connect(DATABASE_PATH)
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conexion = sqlite3.connect(DATABASE_PATH, timeout=30.0)
     conexion.row_factory = sqlite3.Row
     conexion.execute("PRAGMA foreign_keys = ON")
+    conexion.execute("PRAGMA journal_mode = WAL")
     return conexion
 
 
@@ -1299,6 +1301,401 @@ def crear_pedido(pedido: NuevoPedido, authorization: str | None = Header(default
     finally:
         conexion.close()
 
+def _resolver_filtro_fecha(fecha_texto: str | None):
+    if fecha_texto:
+        try:
+            fecha_obj = date.fromisoformat(fecha_texto.strip())
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Formato de fecha inválido. Usa AAAA-MM-DD.",
+            ) from error
+    else:
+        fecha_obj = datetime.now().astimezone().date()
+    return fecha_obj.isoformat(), f"{fecha_obj.strftime('%d/%m/%Y')}%"
+
+
+def _extraer_id_desde_codigo(codigo: str) -> int:
+    limpio = codigo.strip().upper().removeprefix("PE-").lstrip("0") or "0"
+    if not limpio.isdigit() or int(limpio) <= 0:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+    return int(limpio)
+
+
+def _cargar_detalles_pedido(cursor, id_pedido: int):
+    cursor.execute(
+        """
+        SELECT nombre_pizza, cantidad, precio_unitario
+        FROM detalle_pedido
+        WHERE id_pedido = ?
+        ORDER BY id_detalle ASC
+        """,
+        (id_pedido,),
+    )
+    return [dict(fila) for fila in cursor.fetchall()]
+
+
+@app.get("/api/gerencia/reporte")
+def obtener_reporte_gerencia(
+    fecha: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    fecha_iso, fecha_like = _resolver_filtro_fecha(fecha)
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "gerente")
+        filtro = (
+            "(substr(COALESCE(p.creado_en, ''), 1, 10) = ? OR p.fecha LIKE ?) "
+            "AND p.estado != 'Cancelada'"
+        )
+        cursor.execute(
+            f"""
+            SELECT COALESCE(SUM(p.total), 0.0) AS ingresos,
+                   COUNT(*) AS cantidad_pedidos
+            FROM pedidos p
+            WHERE {filtro}
+            """,
+            (fecha_iso, fecha_like),
+        )
+        totales = cursor.fetchone()
+
+        cursor.execute(
+            f"""
+            SELECT p.tipo_servicio,
+                   COUNT(*) AS cantidad,
+                   COALESCE(SUM(p.total), 0.0) AS ingresos
+            FROM pedidos p
+            WHERE {filtro}
+            GROUP BY p.tipo_servicio
+            ORDER BY ingresos DESC
+            """,
+            (fecha_iso, fecha_like),
+        )
+        por_servicio = [
+            {
+                "tipo_servicio": fila["tipo_servicio"],
+                "cantidad": int(fila["cantidad"]),
+                "ingresos": round(float(fila["ingresos"]), 2),
+            }
+            for fila in cursor.fetchall()
+        ]
+
+        cursor.execute(
+            f"""
+            SELECT COALESCE(v.nombre, 'App') AS vendedor,
+                   COUNT(*) AS cantidad,
+                   COALESCE(SUM(p.total), 0.0) AS ingresos
+            FROM pedidos p
+            LEFT JOIN personal v ON v.id_personal = p.id_vendedor
+            WHERE {filtro}
+            GROUP BY COALESCE(v.nombre, 'App')
+            ORDER BY ingresos DESC
+            """,
+            (fecha_iso, fecha_like),
+        )
+        por_vendedor = [
+            {
+                "vendedor": fila["vendedor"],
+                "cantidad": int(fila["cantidad"]),
+                "ingresos": round(float(fila["ingresos"]), 2),
+            }
+            for fila in cursor.fetchall()
+        ]
+
+        return {
+            "fecha": fecha_iso,
+            "ingresos": round(float(totales["ingresos"]), 2),
+            "cantidad_pedidos": int(totales["cantidad_pedidos"]),
+            "por_servicio": por_servicio,
+            "por_vendedor": por_vendedor,
+        }
+    finally:
+        conexion.close()
+
+
+@app.get("/api/gerencia/pedidos")
+def listar_pedidos_gerencia(
+    fecha: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    fecha_iso, fecha_like = _resolver_filtro_fecha(fecha)
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "gerente")
+        cursor.execute(
+            """
+            SELECT p.id_pedido, p.nombre_contacto, p.tipo_servicio,
+                   p.telefono_contacto, p.subtotal, p.costo_envio, p.total,
+                   p.fecha, p.creado_en, p.estado, p.metodo_pago,
+                   COALESCE(v.nombre, 'App') AS vendedor,
+                   COALESCE(c.nombre, 'Sin asignar') AS cocinero
+            FROM pedidos p
+            LEFT JOIN personal v ON v.id_personal = p.id_vendedor
+            LEFT JOIN personal c ON c.id_personal = p.id_cocinero
+            WHERE substr(COALESCE(p.creado_en, ''), 1, 10) = ?
+               OR p.fecha LIKE ?
+            ORDER BY COALESCE(julianday(p.creado_en), 0) DESC, p.id_pedido DESC
+            """,
+            (fecha_iso, fecha_like),
+        )
+        pedidos = []
+        for fila in cursor.fetchall():
+            pedido = dict(fila)
+            pedido["codigo"] = f"PE-{pedido['id_pedido']:06d}"
+            pedido["detalles"] = _cargar_detalles_pedido(cursor, pedido["id_pedido"])
+            pedidos.append(pedido)
+        return {"pedidos": pedidos}
+    finally:
+        conexion.close()
+
+
+@app.patch("/api/gerencia/pedidos/{id_pedido}/cancelar")
+def cancelar_pedido_gerencia(
+    id_pedido: int,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        autenticar_personal(cursor, authorization, "gerente")
+        cursor.execute(
+            "SELECT estado FROM pedidos WHERE id_pedido = ?",
+            (id_pedido,),
+        )
+        pedido = cursor.fetchone()
+        if not pedido:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+        if pedido["estado"] == "Cancelada":
+            raise HTTPException(status_code=409, detail="El pedido ya está cancelado.")
+        cursor.execute(
+            "UPDATE pedidos SET estado = 'Cancelada' WHERE id_pedido = ?",
+            (id_pedido,),
+        )
+        conexion.commit()
+        return {"mensaje": "Pedido cancelado.", "estado": "Cancelada"}
+    finally:
+        conexion.close()
+
+
+@app.get("/api/personal/pedidos")
+def listar_pedidos_personal(authorization: str | None = Header(default=None)):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("vendedor", "gerente"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
+        cursor.execute(
+            """
+            SELECT p.id_pedido, p.id_vendedor, p.nombre_contacto, p.tipo_servicio,
+                   p.telefono_contacto, p.subtotal, p.costo_envio, p.total,
+                   p.fecha, p.creado_en, p.estado, p.metodo_pago,
+                   CASE
+                       WHEN p.id_cliente IS NOT NULL AND p.id_vendedor IS NULL
+                           THEN 'App'
+                       ELSE 'Mostrador'
+                   END AS origen
+            FROM pedidos p
+            ORDER BY COALESCE(julianday(p.creado_en), 0) DESC, p.id_pedido DESC
+            LIMIT 200
+            """
+        )
+        pedidos = []
+        for fila in cursor.fetchall():
+            pedido = dict(fila)
+            pedido["codigo"] = f"PE-{pedido['id_pedido']:06d}"
+            pedido["detalles"] = _cargar_detalles_pedido(cursor, pedido["id_pedido"])
+            pedidos.append(pedido)
+        return {"pedidos": pedidos}
+    finally:
+        conexion.close()
+
+
+@app.get("/api/personal/pedidos/codigo/{codigo}")
+def buscar_pedido_por_codigo_api(
+    codigo: str,
+    authorization: str | None = Header(default=None),
+):
+    id_pedido = _extraer_id_desde_codigo(codigo)
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("vendedor", "gerente"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
+        cursor.execute(
+            """
+            SELECT p.id_pedido, p.id_vendedor, p.nombre_contacto, p.tipo_servicio,
+                   p.telefono_contacto, p.subtotal, p.costo_envio, p.total,
+                   p.fecha, p.creado_en, p.estado, p.metodo_pago,
+                   CASE
+                       WHEN p.id_cliente IS NOT NULL AND p.id_vendedor IS NULL
+                           THEN 'App'
+                       ELSE 'Mostrador'
+                   END AS origen
+            FROM pedidos p
+            WHERE p.id_pedido = ?
+            """,
+            (id_pedido,),
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            raise HTTPException(status_code=404, detail="No se encontró el pedido.")
+        pedido = dict(fila)
+        pedido["codigo"] = f"PE-{pedido['id_pedido']:06d}"
+        pedido["detalles"] = _cargar_detalles_pedido(cursor, pedido["id_pedido"])
+        return pedido
+    finally:
+        conexion.close()
+
+
+@app.patch("/api/personal/pedidos/codigo/{codigo}/entregar")
+def entregar_pedido_por_codigo(
+    codigo: str,
+    authorization: str | None = Header(default=None),
+):
+    id_pedido = _extraer_id_desde_codigo(codigo)
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("vendedor", "gerente"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
+        cursor.execute(
+            "SELECT estado FROM pedidos WHERE id_pedido = ?",
+            (id_pedido,),
+        )
+        pedido = cursor.fetchone()
+        if not pedido:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+        if pedido["estado"] == "Cancelada":
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede entregar un pedido cancelado.",
+            )
+        if pedido["estado"] == "Finalizada":
+            raise HTTPException(
+                status_code=409,
+                detail="Este pedido ya fue entregado.",
+            )
+        cursor.execute(
+            "UPDATE pedidos SET estado = 'Finalizada' WHERE id_pedido = ?",
+            (id_pedido,),
+        )
+        conexion.commit()
+        return {"mensaje": "Pedido entregado y finalizado.", "estado": "Finalizada"}
+    finally:
+        conexion.close()
+
+
+@app.patch("/api/personal/pedidos/{id_pedido}/estado")
+def actualizar_estado_pedido_personal(
+    id_pedido: int,
+    cambio: EstadoPedidoVendedor,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("vendedor", "gerente"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
+        cursor.execute(
+            "SELECT estado FROM pedidos WHERE id_pedido = ?",
+            (id_pedido,),
+        )
+        pedido = cursor.fetchone()
+        if not pedido:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+        if pedido["estado"] == "Cancelada":
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede modificar un pedido cancelado.",
+            )
+        cursor.execute(
+            "UPDATE pedidos SET estado = ? WHERE id_pedido = ?",
+            (cambio.estado, id_pedido),
+        )
+        conexion.commit()
+        return {"mensaje": "Estado del pedido actualizado.", "estado": cambio.estado}
+    finally:
+        conexion.close()
+
+
+@app.post("/api/personal/pedidos/leer-codigo")
+async def leer_codigo_pedido_imagen(
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        personal = autenticar_personal(cursor, authorization)
+        if personal["rol"] not in ("vendedor", "gerente"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
+    finally:
+        conexion.close()
+
+    datos = await request.body()
+    if not datos:
+        raise HTTPException(status_code=400, detail="No se recibió ninguna imagen.")
+
+    try:
+        imagen = Image.open(io.BytesIO(datos))
+        imagen = ImageOps.exif_transpose(imagen)
+    except UnidentifiedImageError as error:
+        raise HTTPException(status_code=400, detail="La imagen enviada no es válida.") from error
+
+    variantes = [
+        imagen,
+        ImageOps.grayscale(imagen),
+        ImageOps.autocontrast(ImageOps.grayscale(imagen)),
+        ImageEnhance.Contrast(ImageOps.grayscale(imagen)).enhance(2.0),
+    ]
+    for variante in variantes:
+        for resultado in zxingcpp.read_barcodes(variante):
+            texto = (resultado.text or "").strip().upper()
+            coincidencia = re.search(r"PE-\d+", texto)
+            if coincidencia:
+                return {"codigo": coincidencia.group(0)}
+            if texto.isdigit():
+                return {"codigo": f"PE-{int(texto):06d}"}
+
+    raise HTTPException(
+        status_code=422,
+        detail="No se detectó ningún código en la imagen.",
+    )
+
+
+@app.get("/api/pedidos")
+def listar_pedidos_cliente(authorization: str | None = Header(default=None)):
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        id_cliente = autenticar_cliente(cursor, authorization)
+        cursor.execute(
+            """
+            SELECT id_pedido, nombre_contacto, tipo_servicio, direccion,
+                   referencias, telefono_contacto, subtotal, costo_envio,
+                   total, fecha, creado_en, estado, hora_recoleccion,
+                   metodo_pago
+            FROM pedidos
+            WHERE id_cliente = ?
+            ORDER BY COALESCE(julianday(creado_en), 0) DESC, id_pedido DESC
+            """,
+            (id_cliente,),
+        )
+        pedidos = []
+        for fila in cursor.fetchall():
+            pedido = dict(fila)
+            pedido["codigo"] = f"PE-{pedido['id_pedido']:06d}"
+            pedido["detalles"] = _cargar_detalles_pedido(cursor, pedido["id_pedido"])
+            pedidos.append(pedido)
+        return {"pedidos": pedidos}
+    finally:
+        conexion.close()
 
 if __name__ == "__main__":
     import uvicorn
