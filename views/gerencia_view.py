@@ -398,7 +398,9 @@ class GerenciaView(ft.Column):
             controls=[self.seccion_finanzas],
             expand=True,
             scroll=ft.ScrollMode.AUTO,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
+        
         self.navegacion_secciones = ft.NavigationBar(
             selected_index=0,
             bgcolor="#6A0404",
@@ -666,18 +668,40 @@ class GerenciaView(ft.Column):
             if self._manejar_sesion_expirada(respuesta):
                 return False
 
-        for respuesta in (reporte, vendedores, pedidos):
-            if respuesta.status_code != 200:
-                try:
-                    detalle = respuesta.json().get("detail")
-                except ValueError:
-                    detalle = None
-                self.mostrar_error(
-                    detalle
-                    if isinstance(detalle, str)
-                    else "No se pudieron cargar los datos de gerencia."
+        errores = []
+
+        if reporte.status_code == 200:
+            self.mostrar_reporte(reporte.json())
+        else:
+            errores.append("reporte financiero")
+
+        if vendedores.status_code == 200:
+            self.mostrar_vendedores(vendedores.json().get("vendedores", []))
+        else:
+            errores.append("vendedores")
+
+        if pedidos.status_code == 200:
+            self.mostrar_pedidos(pedidos.json().get("pedidos", []))
+        else:
+            errores.append("pedidos del día")
+
+        if cocineros.status_code == 200:
+            self.mostrar_cocineros(cocineros.json().get("cocineros", []))
+        else:
+            self.lista_cocineros.controls = [
+                ft.Text(
+                    "Actualiza el servidor para habilitar la gestión de cocina.",
+                    color="#806B63",
                 )
-                return False
+            ]
+
+        self.lbl_error.value = (
+            f"Faltan rutas en el servidor: {', '.join(errores)}."
+            if errores
+            else ""
+        )
+        self.actualizar_estado()
+        return not errores
 
         self.mostrar_reporte(reporte.json())
         self.mostrar_vendedores(vendedores.json().get("vendedores", []))
