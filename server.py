@@ -507,15 +507,37 @@ def asignar_siguiente_cocinero(cursor):
     return siguiente_id
 
 
+SIN_EXPIRACION_CLIENTE = "9999-12-31T23:59:59+00:00"
+
+
 def crear_sesion(cursor, id_cliente):
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    expira_en = (datetime.now(timezone.utc) + SESSION_DURATION).isoformat()
     cursor.execute(
         "INSERT INTO sesiones (token_hash, id_cliente, expira_en) VALUES (?, ?, ?)",
-        (token_hash, id_cliente, expira_en),
+        (token_hash, id_cliente, SIN_EXPIRACION_CLIENTE),
     )
     return token
+
+
+def autenticar_cliente(cursor, authorization):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Inicia sesión para continuar.")
+
+    esquema, separador, token = authorization.partition(" ")
+    if not separador or esquema.casefold() != "bearer" or not token.strip():
+        raise HTTPException(status_code=401, detail="La sesión no es válida.")
+
+    token_hash = hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
+    cursor.execute(
+        "SELECT id_cliente FROM sesiones WHERE token_hash = ?",
+        (token_hash,),
+    )
+    sesion = cursor.fetchone()
+    if not sesion:
+        raise HTTPException(status_code=401, detail="La sesión no es válida.")
+
+    return sesion["id_cliente"]
 
 
 def validar_contrasena_personal(contrasena):
@@ -621,32 +643,6 @@ def autenticar_personal(cursor, authorization, rol_requerido=None):
     if rol_requerido and personal["rol"] != rol_requerido:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción.")
     return personal
-
-
-def autenticar_cliente(cursor, authorization):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Inicia sesión para continuar.")
-
-    esquema, separador, token = authorization.partition(" ")
-    if not separador or esquema.casefold() != "bearer" or not token.strip():
-        raise HTTPException(status_code=401, detail="La sesión no es válida.")
-
-    token_hash = hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
-    cursor.execute(
-        "SELECT id_cliente, expira_en FROM sesiones WHERE token_hash = ?",
-        (token_hash,),
-    )
-    sesion = cursor.fetchone()
-    if not sesion:
-        raise HTTPException(status_code=401, detail="La sesión no es válida.")
-
-    if datetime.fromisoformat(sesion["expira_en"]) <= datetime.now(timezone.utc):
-        cursor.execute("DELETE FROM sesiones WHERE token_hash = ?", (token_hash,))
-        raise HTTPException(
-            status_code=401,
-            detail="La sesión expiró. Inicia sesión nuevamente.",
-        )
-    return sesion["id_cliente"]
 
 
 @asynccontextmanager

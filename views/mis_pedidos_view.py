@@ -389,7 +389,7 @@ class MisPedidosView(ft.Column):
                     error_consulta = (
                         "No se pudieron cargar tus pedidos. Inténtalo de nuevo."
                     )
-            except (requests.RequestException, KeyError, ValueError):
+            except (requests.RequestException, KeyError, TypeError, ValueError):
                 error_consulta = (
                     "No se pudieron cargar tus pedidos. Revisa tu conexión "
                     "e inténtalo de nuevo."
@@ -412,7 +412,17 @@ class MisPedidosView(ft.Column):
         )
         respuesta.raise_for_status()
         datos = respuesta.json()
-        return datos["pedido_activo"], datos["historial"]
+
+        if "pedido_activo" in datos or "historial" in datos:
+            return datos.get("pedido_activo"), datos.get("historial") or []
+
+        pedidos = datos.get("pedidos") or []
+        estados_activos = {"En Proceso", "Lista"}
+        activo = next(
+            (p for p in pedidos if p.get("estado") in estados_activos),
+            None,
+        )
+        return activo, pedidos
 
     def crear_panel_pedido_activo(self, pedido):
         try:
