@@ -1693,6 +1693,248 @@ def listar_pedidos_cliente(authorization: str | None = Header(default=None)):
     finally:
         conexion.close()
 
+def enviar_correo_restablecimiento(correo_destino: str, nombre: str, codigo: str):
+    asunto = "Código de recuperación - PizzaExpress"
+    cuerpo = (
+        f"Hola {nombre or 'cliente'},\n\n"
+        f"Tu código de confirmación para restablecer tu contraseña en PizzaExpress es:\n\n"
+        f"    {codigo}\n\n"
+        f"Este código vence en 3 minutos.\n"
+        f"Si no solicitaste este cambio, ignora este mensaje."
+    )
+
+    remitente_raw = os.environ.get("SMTP_FROM", "").strip()
+    nombre_remitente, correo_remitente = parseaddr(remitente_raw)
+    if not correo_remitente:
+        correo_remitente = os.environ.get("SMTP_USER", "").strip()
+    if not nombre_remitente:
+        nombre_remitente = "PizzaExpress"
+
+    brevo_api_key = os.environ.get("BREVO_API_KEY", "").strip()
+    if brevo_api_key and correo_remitente:
+        payload = json.dumps(
+            {
+                "sender": {"name": nombre_remitente, "email": correo_remitente},
+                "to": [{"email": correo_destino, "name": nombre or correo_destino}],
+                "subject": asunto,
+                "textContent": cuerpo,
+            }
+        ).encode("utf-8")
+        req = urllib_request.Request(
+            "https://api.brevo.com/v3/smtp/email",
+            data=payload,
+            headers={
+                "api-key": brevo_api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(req, timeout=20) as resp:
+                if 200 <= resp.status < 300:
+                    return
+        except urllib_error.URLError as error:
+            logger.error("Error enviando correo con Brevo API: %s", error)
+
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    smtp_port = int(os.environ.get("SMTP_PORT", "587") or "587")
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
+
+    if not smtp_host or not correo_remitente:
+        raise HTTPException(
+            status_code=503,
+            detail="El servicio de correo no está configurado en el servidor.",
+        )
+
+    msg = EmailMessage()
+    msg["Subject"] = asunto
+    msg["From"] = f"{nombre_remitente} <{correo_remitente}>"
+    msg["To"] = correo_destino
+    msg.set_content(cuerpo)
+
+    try:
+        contexto = ssl.create_default_context()
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=contexto, timeout=20) as srv:
+                if smtp_user and smtp_password:
+                    srv.login(smtp_user, smtp_password)
+                srv.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as srv:
+                srv.starttls(context=contexto)
+                if smtp_user and smtp_password:
+                    srv.login(smtp_user, smtp_password)
+                srv.send_message(msg)
+    except Exception as error:
+        logger.error("Error enviando correo por SMTP: %s", error)
+        raise HTTPException(
+            status_code=502,
+            detail="No se pudo enviar el correo de recuperación. Inténtalo más tarde.",
+        ) from error
+
+
+@app.post("/api/password-reset/request")
+def solicitar_restablecimiento_contrasena(datos: SolicitudRestablecimiento):
+    correo = datos.correo.strip().lower()
+    if not correo_valido(correo):
+        raise HTTPException(status_code=422, detail="Ingresa un correo electrónico válido.")
+
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute(
+            "SELECT id_cliente, nombre FROM clientes WHERE LOWER(TRIM(correo)) = ?",
+            (correo,),
+        )
+        cliente = cursor.fetchone()
+        if not cliente:
+            return {
+                "mensaje": "Si existe una cuenta con ese correo, enviamos un código de confirmación."
+            }
+
+        codigo = "".join(secrets.choice(string.ascii_uppercase) for _ in range(6))
+        codigo_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
+        expira_en = (datetime.now(timezone.utc) + PASSWORD_RESET_DURATION).isoformat()
+
+        cursor.execute(
+            """
+            INSERT INTO codigos_restablecimiento
+                (id_cliente, codigo_hash, token_hash, expira_en, intentos)
+            VALUES (?, ?, NULL, ?, 0)
+            ON CONFLICT(id_cliente) DO UPDATE SET
+                codigo_hash = excluded.codigo_hash,
+                token_hash = NULL,
+                expira_en = excluded.expira_en,
+                intentos = 0
+            """,
+            (cliente["id_cliente"], codigo_hash, expira_en),
+        )
+        conexion.commit()
+
+        enviar_correo_restablecimiento(correo, cliente["nombre"], codigo)
+        return {
+            "mensaje": "Si existe una cuenta con ese correo, enviamos un código de confirmación."
+        }
+    finally:
+        conexion.close()
+
+
+@app.post("/api/password-reset/verify")
+def verificar_codigo_restablecimiento(datos: VerificarCodigoRestablecimiento):
+    correo = datos.correo.strip().lower()
+    codigo = datos.codigo.strip().upper()
+
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT c.id_cliente, r.codigo_hash, r.expira_en, r.intentos
+            FROM clientes c
+            JOIN codigos_restablecimiento r ON r.id_cliente = c.id_cliente
+            WHERE LOWER(TRIM(c.correo)) = ?
+            """,
+            (correo,),
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            raise HTTPException(status_code=400, detail="El código no es válido o expiró.")
+
+        if datetime.fromisoformat(fila["expira_en"]) <= datetime.now(timezone.utc):
+            cursor.execute(
+                "DELETE FROM codigos_restablecimiento WHERE id_cliente = ?",
+                (fila["id_cliente"],),
+            )
+            conexion.commit()
+            raise HTTPException(status_code=400, detail="El código expiró. Solicita uno nuevo.")
+
+        if fila["intentos"] >= MAX_RESET_CODE_ATTEMPTS:
+            cursor.execute(
+                "DELETE FROM codigos_restablecimiento WHERE id_cliente = ?",
+                (fila["id_cliente"],),
+            )
+            conexion.commit()
+            raise HTTPException(
+                status_code=429,
+                detail="Demasiados intentos fallidos. Solicita un nuevo código.",
+            )
+
+        codigo_hash = hashlib.sha256(codigo.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(codigo_hash, fila["codigo_hash"]):
+            cursor.execute(
+                "UPDATE codigos_restablecimiento SET intentos = intentos + 1 WHERE id_cliente = ?",
+                (fila["id_cliente"],),
+            )
+            conexion.commit()
+            raise HTTPException(status_code=400, detail="El código es incorrecto.")
+
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        expira_token = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+
+        cursor.execute(
+            """
+            INSERT INTO restablecimientos_contrasena (token_hash, id_cliente, expira_en)
+            VALUES (?, ?, ?)
+            """,
+            (token_hash, fila["id_cliente"], expira_token),
+        )
+        cursor.execute(
+            "DELETE FROM codigos_restablecimiento WHERE id_cliente = ?",
+            (fila["id_cliente"],),
+        )
+        conexion.commit()
+        return {"token": token}
+    finally:
+        conexion.close()
+
+
+@app.post("/api/password-reset/confirm")
+def confirmar_restablecimiento_contrasena(datos: ConfirmarRestablecimiento):
+    validar_contrasena_cliente(datos.nueva_contrasena)
+    token_hash = hashlib.sha256(datos.token.strip().encode("utf-8")).hexdigest()
+
+    conexion = conectar_db()
+    cursor = conexion.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id_cliente, expira_en
+            FROM restablecimientos_contrasena
+            WHERE token_hash = ?
+            """,
+            (token_hash,),
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            raise HTTPException(status_code=400, detail="El enlace o token no es válido.")
+
+        if datetime.fromisoformat(fila["expira_en"]) <= datetime.now(timezone.utc):
+            cursor.execute(
+                "DELETE FROM restablecimientos_contrasena WHERE token_hash = ?",
+                (token_hash,),
+            )
+            conexion.commit()
+            raise HTTPException(
+                status_code=400,
+                detail="El tiempo para cambiar la contraseña expiró. Solicita otro código.",
+            )
+
+        cursor.execute(
+            "UPDATE clientes SET contrasena = ? WHERE id_cliente = ?",
+            (datos.nueva_contrasena.strip(), fila["id_cliente"]),
+        )
+        cursor.execute(
+            "DELETE FROM restablecimientos_contrasena WHERE id_cliente = ?",
+            (fila["id_cliente"],),
+        )
+        conexion.commit()
+        return {"mensaje": "Contraseña actualizada correctamente."}
+    finally:
+        conexion.close()
+
 if __name__ == "__main__":
     import uvicorn
 
