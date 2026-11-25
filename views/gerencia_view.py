@@ -14,6 +14,7 @@ class GerenciaView(ft.Column):
         self.on_cerrar_sesion = on_cerrar_sesion
         self._actualizacion_activa = False
         self._generacion_actualizacion = 0
+        self._sesion_cerrada = False
         self.es_movil = es_movil
         self.expand = True
         self.spacing = 12
@@ -65,7 +66,7 @@ class GerenciaView(ft.Column):
                     ft.Icons.ATTACH_MONEY,
                     "Ingresos totales",
                     self.lbl_ingresos,
-                    "$",
+                    "#6A0404",
                 ),
                 self.crear_tarjeta_kpi(
                     ft.Icons.RECEIPT_LONG,
@@ -428,7 +429,28 @@ class GerenciaView(ft.Column):
             self.lbl_error,
             self.navegacion_secciones,
         ]
-        self.cargar_datos(None)
+
+    def _obtener_pagina(self):
+        try:
+            return self.page
+        except RuntimeError:
+            return None
+
+    def _manejar_sesion_expirada(self, respuesta):
+        if respuesta.status_code in (401, 403):
+            if not self._sesion_cerrada:
+                self._sesion_cerrada = True
+                self._actualizacion_activa = False
+                self._generacion_actualizacion += 1
+                pagina = self._obtener_pagina()
+                if pagina is not None:
+                    try:
+                        pagina.pop_dialog()
+                    except RuntimeError:
+                        pass
+                self.on_cerrar_sesion()
+            return True
+        return False
 
     def crear_tarjeta_kpi(self, icono, titulo, valor, color_icono):
         return ft.Container(
@@ -555,8 +577,10 @@ class GerenciaView(ft.Column):
     def did_mount(self):
         self._actualizacion_activa = True
         self._generacion_actualizacion += 1
-        if self.page is not None:
-            self.page.run_task(
+        pagina = self._obtener_pagina()
+        if pagina is not None:
+            pagina.run_task(self._cargar_datos_async)
+            pagina.run_task(
                 self.actualizar_automaticamente,
                 self._generacion_actualizacion,
             )
@@ -564,6 +588,21 @@ class GerenciaView(ft.Column):
     def will_unmount(self):
         self._actualizacion_activa = False
         self._generacion_actualizacion += 1
+
+    async def _cargar_datos_async(self):
+        self.lbl_error.value = ""
+        try:
+            fecha = self.obtener_fecha_reporte_iso()
+        except ValueError:
+            self.mostrar_error("Usa una fecha válida con formato DD/MM/AAAA.")
+            return
+        try:
+            respuestas = await asyncio.to_thread(self.consultar_datos, fecha)
+        except requests.RequestException:
+            self.mostrar_error("No se pudo conectar con el servidor.")
+            return
+        if self._actualizacion_activa:
+            self.mostrar_respuestas(respuestas)
 
     def cambiar_seccion(self, e):
         indice = e.control.selected_index
@@ -623,6 +662,10 @@ class GerenciaView(ft.Column):
 
     def mostrar_respuestas(self, respuestas):
         reporte, vendedores, pedidos, cocineros = respuestas
+        for respuesta in (reporte, vendedores, pedidos, cocineros):
+            if self._manejar_sesion_expirada(respuesta):
+                return False
+
         for respuesta in (reporte, vendedores, pedidos):
             if respuesta.status_code != 200:
                 try:
@@ -1027,6 +1070,8 @@ class GerenciaView(ft.Column):
         except requests.RequestException:
             self.mostrar_error("No se pudo conectar con el servidor.")
             return
+        if self._manejar_sesion_expirada(respuesta):
+            return
         if respuesta.status_code != 201:
             self.mostrar_respuesta_error(respuesta)
             return
@@ -1035,6 +1080,8 @@ class GerenciaView(ft.Column):
         self.txt_telefono.value = ""
         self.txt_contrasena.value = ""
         actualizados = self.cargar_datos(None)
+        if self._sesion_cerrada:
+            return
         etiqueta = "cocinero" if rol == "cocinero" else "vendedor"
         self.lbl_error.value = (
             f"Cuenta de {etiqueta} creada."
@@ -1062,10 +1109,14 @@ class GerenciaView(ft.Column):
         except requests.RequestException:
             self.mostrar_error("No se pudo conectar con el servidor.")
             return
+        if self._manejar_sesion_expirada(respuesta):
+            return
         if respuesta.status_code != 200:
             self.mostrar_respuesta_error(respuesta)
             return
         actualizados = self.cargar_datos(None)
+        if self._sesion_cerrada:
+            return
         etiqueta = "cocinero" if rol == "cocinero" else "vendedor"
         self.lbl_error.value = (
             f"Estado del {etiqueta} actualizado."
@@ -1084,10 +1135,14 @@ class GerenciaView(ft.Column):
         except requests.RequestException:
             self.mostrar_error("No se pudo conectar con el servidor.")
             return
+        if self._manejar_sesion_expirada(respuesta):
+            return
         if respuesta.status_code != 200:
             self.mostrar_respuesta_error(respuesta)
             return
         actualizados = self.cargar_datos(None)
+        if self._sesion_cerrada:
+            return
         self.lbl_error.value = (
             "Pedido cancelado."
             if actualizados
@@ -1135,8 +1190,9 @@ class GerenciaView(ft.Column):
         self.actualizar_estado()
 
     def actualizar_estado(self):
+        pagina = self._obtener_pagina()
         try:
-            if self.page is not None:
+            if pagina is not None:
                 self.update()
         except RuntimeError:
             return
