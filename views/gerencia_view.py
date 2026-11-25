@@ -780,12 +780,22 @@ class GerenciaView(ft.Column):
             self.crear_tarjeta_empleado(vendedor, "vendedor")
             for vendedor in vendedores
         ] or [ft.Text("Todavía no hay vendedores.", color="#806B63")]
+        try:
+            if self.lista_vendedores.page is not None:
+                self.lista_vendedores.update()
+        except RuntimeError:
+            pass
 
     def mostrar_cocineros(self, cocineros):
         self.lista_cocineros.controls = [
             self.crear_tarjeta_empleado(cocinero, "cocinero")
             for cocinero in cocineros
         ] or [ft.Text("Todavía no hay cocineros registrados.", color="#806B63")]
+        try:
+            if self.lista_cocineros.page is not None:
+                self.lista_cocineros.update()
+        except RuntimeError:
+            pass
 
     def crear_tarjeta_empleado(self, empleado, rol):
         nombre = empleado.get("nombre", "").strip()

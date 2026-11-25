@@ -2034,8 +2034,11 @@ class VendedorView(ft.Column):
             return
 
     def actualizar_estado(self):
+        pagina = self._obtener_pagina()
         try:
-            if self.lbl_estado.page is not None:
-                self.lbl_estado.update()
+            if self.contenido_seccion.page is not None:
+                self.contenido_seccion.update()
+            if pagina is not None:
+                self.update()
         except RuntimeError:
             return
