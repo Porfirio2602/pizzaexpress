@@ -614,6 +614,7 @@ class GerenciaView(ft.Column):
         try:
             if self.contenido_seccion.page is not None:
                 self.contenido_seccion.update()
+                self.contenido_seccion.page.run_task(self._cargar_datos_async)
         except RuntimeError:
             return
 
