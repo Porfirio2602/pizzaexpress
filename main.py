@@ -1159,17 +1159,6 @@ def construir_aplicacion(page: ft.Page):
         ),
     )
 
-    encabezado_seguro = (
-        ft.SafeArea(
-            content=barra_superior,
-            top=True,
-            bottom=False,
-            left=False,
-            right=False,
-        )
-        if es_movil
-        else barra_superior
-    )
 
     actualizar_encabezado_carrito()
 
@@ -1403,7 +1392,7 @@ def construir_aplicacion(page: ft.Page):
                         nav_rail_contenedor,
                         ft.Column(
                             [
-                                encabezado_seguro,
+                                barra_superior,
                                 contenido_principal,
                                 contenedor_comprar,
                             ],
