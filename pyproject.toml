@@ -1,5 +1,32 @@
 [tool.flet]
+org = "com.pizzaexpress"
+product = "PizzaExpress"
 permissions = ["camera"]
+
+[tool.flet.app]
+exclude = [
+    "build",
+    "dist",
+    "dist_installer",
+    "server.py",
+    "pizza_express.py",
+    "pizza_express.db",
+    "requirements.txt",
+    "PizzaExpress.spec",
+    "main.spec",
+    "installer.iss",
+    "flet.yml",
+    "README.md",
+    "sesion.json",
+    "sesion_personal.json",
+    ".git",
+    ".gitignore",
+    ".gitnignore",
+    "__pycache__",
+    "*.ico",
+    "*.exe",
+    "*.apk",
+]
 
 [tool.flet.android]
 dependencies = [
