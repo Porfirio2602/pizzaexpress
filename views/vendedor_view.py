@@ -945,7 +945,7 @@ class VendedorView(ft.Column):
                                         else ft.FontWeight.W_500
                                     ),
                                     max_lines=1,
-                                    soft_wrap=False,
+                                    no_wrap=True,
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                 ),
                             ],

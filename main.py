@@ -1035,7 +1035,7 @@ def construir_aplicacion(page: ft.Page):
                                 weight=ft.FontWeight.BOLD,
                                 color=color_contenido,
                                 max_lines=1,
-                                soft_wrap=False,
+                                no_wrap=True,
                                 overflow=ft.TextOverflow.ELLIPSIS,
                             ),
                         ],

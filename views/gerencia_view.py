@@ -981,14 +981,12 @@ class GerenciaView(ft.Column):
 
     def crear_tarjeta_pedido(self, pedido):
         return ft.Container(
-            padding=14,
+            padding=12,
             bgcolor=ft.Colors.WHITE,
-            border_radius=14,
+            border_radius=12,
             border=ft.Border.all(1, "#F0D8CA"),
-            shadow=ft.BoxShadow(
-                blur_radius=10,
-                color=ft.Colors.with_opacity(0.05, ft.Colors.BLACK),
-                offset=ft.Offset(0, 3),
+            content=ft.Column(
+                spacing=5,
                 controls=[
                     ft.Row(
                         [
