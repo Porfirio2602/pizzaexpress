@@ -97,6 +97,22 @@ def limpiar_sesion_personal():
 def main(page: ft.Page):
     page.title = "PizzaExpress"
     page.theme_mode = ft.ThemeMode.LIGHT
+    page.theme = ft.Theme(
+        navigation_bar_theme=ft.NavigationBarTheme(
+            label_text_style={
+                ft.ControlState.DEFAULT: ft.TextStyle(
+                    size=11,
+                    weight=ft.FontWeight.W_600,
+                    color="#F5D5D5",
+                ),
+                ft.ControlState.SELECTED: ft.TextStyle(
+                    size=11,
+                    weight=ft.FontWeight.BOLD,
+                    color=ft.Colors.WHITE,
+                ),
+            }
+        )
+    )
     page.bgcolor = "#FFF8F2"
     page.padding = 0
     page.spacing = 0
@@ -1305,11 +1321,6 @@ def construir_aplicacion(page: ft.Page):
         bgcolor="#6A0404",
         indicator_color="#F4C95D",
         label_behavior=ft.NavigationBarLabelBehavior.ALWAYS_SHOW,
-        label_text_style=ft.TextStyle(
-            size=11,
-            weight=ft.FontWeight.W_600,
-            color=ft.Colors.WHITE,
-        ),
         on_change=cambiar_ventana,
         destinations=[
             ft.NavigationBarDestination(

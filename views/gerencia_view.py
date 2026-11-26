@@ -406,11 +406,6 @@ class GerenciaView(ft.Column):
             bgcolor="#6A0404",
             indicator_color="#F4C95D",
             label_behavior=ft.NavigationBarLabelBehavior.ALWAYS_SHOW,
-            label_text_style=ft.TextStyle(
-                size=11,
-                weight=ft.FontWeight.W_600,
-                color=ft.Colors.WHITE,
-            ),
             on_change=self.cambiar_seccion,
             destinations=[
                 ft.NavigationBarDestination(
