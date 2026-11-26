@@ -174,6 +174,7 @@ def construir_aplicacion(page: ft.Page):
     page.spacing = 0
 
     acciones_encabezado: ft.Row | None = None
+    selector_entrega: ft.Row | None = None
 
     def abrir_dialogo_seguro(dialogo):
         try:
@@ -191,12 +192,14 @@ def construir_aplicacion(page: ft.Page):
         except RuntimeError:
             pass
 
-    def actualizar_visibilidad_navegacion(visible):
+    def actualizar_visibilidad_navegacion(visible, mostrar_entrega=True):
         page.navigation_bar.visible = visible and not es_escritorio
         if nav_rail is not None:
             nav_rail.visible = visible and es_escritorio
         if acciones_encabezado is not None:
             acciones_encabezado.visible = visible
+        if selector_entrega is not None:
+            selector_entrega.visible = mostrar_entrega
 
     def actualizar_indice_navegacion(indice):
         page.navigation_bar.selected_index = indice
@@ -269,9 +272,12 @@ def construir_aplicacion(page: ft.Page):
 
     def mostrar_panel_personal():
         cerrar_drawer()
-        actualizar_visibilidad_navegacion(False)
-        contenedor_comprar.content = None
         rol = personal_actual.get("rol")
+        actualizar_visibilidad_navegacion(
+            False,
+            mostrar_entrega=rol not in ("gerente", "cocinero"),
+        )
+        contenedor_comprar.content = None
         if rol == "gerente":
             contenido_principal.content = GerenciaView(
                 personal=personal_actual,
@@ -312,10 +318,25 @@ def construir_aplicacion(page: ft.Page):
         if personal_actual.get("rol") == "cocinero" and personal_actual.get("token"):
             mostrar_panel_personal()
             return
-        actualizar_visibilidad_navegacion(False)
+        actualizar_visibilidad_navegacion(False, mostrar_entrega=False)
         contenedor_comprar.content = None
         contenido_principal.content = PersonalLoginView(
             rol="cocinero",
+            on_login_exitoso=manejar_login_personal,
+            on_volver=regresar_inicio_general,
+            es_movil=es_movil,
+        )
+        page.update()
+
+    def ir_a_gerencia(e=None):
+        cerrar_drawer()
+        if personal_actual.get("rol") == "gerente" and personal_actual.get("token"):
+            mostrar_panel_personal()
+            return
+        actualizar_visibilidad_navegacion(False, mostrar_entrega=False)
+        contenedor_comprar.content = None
+        contenido_principal.content = PersonalLoginView(
+            rol="gerente",
             on_login_exitoso=manejar_login_personal,
             on_volver=regresar_inicio_general,
             es_movil=es_movil,
@@ -983,7 +1004,7 @@ def construir_aplicacion(page: ft.Page):
 
     def actualizar_selector_entrega():
         opciones = [
-            ("A Domicilio", ft.Icons.LOCAL_SHIPPING_OUTLINED, "A domicilio"),
+            ("A Domicilio", ft.Icons.LOCAL_SHIPPING_OUTLINED, "Domicilio"),
             ("En Tienda", ft.Icons.STORE_MALL_DIRECTORY, "Recoger"),
         ]
         controles = []
@@ -1005,25 +1026,28 @@ def construir_aplicacion(page: ft.Page):
                         controls=[
                             ft.Icon(
                                 icono,
-                                size=17 if es_movil else 15,
+                                size=15,
                                 color=color_contenido,
                             ),
                             ft.Text(
                                 etiqueta,
-                                size=9 if es_movil else 12,
+                                size=10 if es_movil else 12,
                                 weight=ft.FontWeight.BOLD,
                                 color=color_contenido,
+                                max_lines=1,
+                                soft_wrap=False,
+                                overflow=ft.TextOverflow.ELLIPSIS,
                             ),
                         ],
-                        spacing=4 if es_movil else 6,
+                        spacing=3 if es_movil else 6,
                         tight=True,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     padding=ft.Padding(
-                        left=7 if es_movil else 10,
-                        top=7,
-                        right=7 if es_movil else 10,
-                        bottom=7,
+                        left=6 if es_movil else 10,
+                        top=6,
+                        right=6 if es_movil else 10,
+                        bottom=6,
                     ),
                     border_radius=12,
                     bgcolor="#F4C95D" if activo else "#6A0404",
@@ -1118,6 +1142,19 @@ def construir_aplicacion(page: ft.Page):
             bottom=6 if es_movil else 9,
         ),
     )
+
+    encabezado_seguro = (
+        ft.SafeArea(
+            content=barra_superior,
+            top=True,
+            bottom=False,
+            left=False,
+            right=False,
+        )
+        if es_movil
+        else barra_superior
+    )
+
     actualizar_encabezado_carrito()
 
     def mostrar_ventana(indice):
@@ -1266,24 +1303,29 @@ def construir_aplicacion(page: ft.Page):
         selected_index=0,
         visible=not es_escritorio,
         bgcolor="#6A0404",
-        indicator_color=ft.Colors.WHITE,
+        indicator_color="#F4C95D",
         label_behavior=ft.NavigationBarLabelBehavior.ALWAYS_SHOW,
+        label_text_style=ft.TextStyle(
+            size=11,
+            weight=ft.FontWeight.W_600,
+            color=ft.Colors.WHITE,
+        ),
         on_change=cambiar_ventana,
         destinations=[
             ft.NavigationBarDestination(
-                icon=ft.Icons.LOCAL_PIZZA_OUTLINED,
-                selected_icon=ft.Icons.LOCAL_PIZZA,
+                icon=ft.Icon(ft.Icons.LOCAL_PIZZA_OUTLINED, color="#F5D5D5", size=22),
+                selected_icon=ft.Icon(ft.Icons.LOCAL_PIZZA, color="#550707", size=22),
                 label="Inicio",
             ),
             ft.NavigationBarDestination(
-                icon=ft.Icons.SHOPPING_CART_OUTLINED,
-                selected_icon=ft.Icons.SHOPPING_CART,
+                icon=ft.Icon(ft.Icons.SHOPPING_CART_OUTLINED, color="#F5D5D5", size=22),
+                selected_icon=ft.Icon(ft.Icons.SHOPPING_CART, color="#550707", size=22),
                 label="Carrito",
             ),
             ft.NavigationBarDestination(
-                icon=ft.Icons.SHOPPING_BAG_SHARP,
-                selected_icon=ft.Icons.SHOPPING_BAG_SHARP,
-                label="PEDIDOS",
+                icon=ft.Icon(ft.Icons.SHOPPING_BAG_OUTLINED, color="#F5D5D5", size=22),
+                selected_icon=ft.Icon(ft.Icons.SHOPPING_BAG, color="#550707", size=22),
+                label="Pedidos",
             ),
         ],
     )
@@ -1350,7 +1392,7 @@ def construir_aplicacion(page: ft.Page):
                         nav_rail_contenedor,
                         ft.Column(
                             [
-                                barra_superior,
+                                encabezado_seguro,
                                 contenido_principal,
                                 contenedor_comprar,
                             ],

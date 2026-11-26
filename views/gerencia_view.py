@@ -404,27 +404,33 @@ class GerenciaView(ft.Column):
         self.navegacion_secciones = ft.NavigationBar(
             selected_index=0,
             bgcolor="#6A0404",
-            indicator_color=ft.Colors.WHITE,
+            indicator_color="#F4C95D",
             label_behavior=ft.NavigationBarLabelBehavior.ALWAYS_SHOW,
+            label_text_style=ft.TextStyle(
+                size=11,
+                weight=ft.FontWeight.W_600,
+                color=ft.Colors.WHITE,
+            ),
             on_change=self.cambiar_seccion,
             destinations=[
                 ft.NavigationBarDestination(
-                    icon=ft.Icons.ANALYTICS_OUTLINED,
-                    selected_icon=ft.Icons.ANALYTICS,
+                    icon=ft.Icon(ft.Icons.ANALYTICS_OUTLINED, color="#F5D5D5", size=22),
+                    selected_icon=ft.Icon(ft.Icons.ANALYTICS, color="#550707", size=22),
                     label="Finanzas",
                 ),
                 ft.NavigationBarDestination(
-                    icon=ft.Icons.RECEIPT_LONG_OUTLINED,
-                    selected_icon=ft.Icons.RECEIPT_LONG,
+                    icon=ft.Icon(ft.Icons.RECEIPT_LONG_OUTLINED, color="#F5D5D5", size=22),
+                    selected_icon=ft.Icon(ft.Icons.RECEIPT_LONG, color="#550707", size=22),
                     label="Pedidos",
                 ),
                 ft.NavigationBarDestination(
-                    icon=ft.Icons.PEOPLE_OUTLINE,
-                    selected_icon=ft.Icons.PEOPLE,
+                    icon=ft.Icon(ft.Icons.PEOPLE_OUTLINE, color="#F5D5D5", size=22),
+                    selected_icon=ft.Icon(ft.Icons.PEOPLE, color="#550707", size=22),
                     label="Personal",
                 ),
             ],
         )
+
         self.controls = [
             self.encabezado,
             self.contenido_seccion,
@@ -704,20 +710,7 @@ class GerenciaView(ft.Column):
         self.actualizar_estado()
         return not errores
 
-        self.mostrar_reporte(reporte.json())
-        self.mostrar_vendedores(vendedores.json().get("vendedores", []))
-        self.mostrar_pedidos(pedidos.json().get("pedidos", []))
-        if cocineros.status_code == 200:
-            self.mostrar_cocineros(cocineros.json().get("cocineros", []))
-        else:
-            self.lista_cocineros.controls = [
-                ft.Text(
-                    "Actualiza el servidor para habilitar la gestión de cocina.",
-                    color="#806B63",
-                )
-            ]
-        self.actualizar_estado()
-        return True
+        
 
     async def actualizar_automaticamente(self, generacion):
         while (
@@ -988,12 +981,14 @@ class GerenciaView(ft.Column):
 
     def crear_tarjeta_pedido(self, pedido):
         return ft.Container(
-            padding=12,
+            padding=14,
             bgcolor=ft.Colors.WHITE,
-            border_radius=12,
+            border_radius=14,
             border=ft.Border.all(1, "#F0D8CA"),
-            content=ft.Column(
-                spacing=5,
+            shadow=ft.BoxShadow(
+                blur_radius=10,
+                color=ft.Colors.with_opacity(0.05, ft.Colors.BLACK),
+                offset=ft.Offset(0, 3),
                 controls=[
                     ft.Row(
                         [

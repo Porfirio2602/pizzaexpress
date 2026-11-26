@@ -532,23 +532,27 @@ class MisPedidosView(ft.Column):
             ),
         )
 
+    def _alternar_visibilidad_activo(self, mostrar_activo: bool):
+        self.detalles_activo_visible = mostrar_activo
+        self.seccion_pedido_activo.visible = mostrar_activo
+        self.btn_ver_pedido_activo.visible = not mostrar_activo
+        self.seccion_historial.visible = not mostrar_activo
+        for control in (
+            self.seccion_pedido_activo,
+            self.btn_ver_pedido_activo,
+            self.seccion_historial,
+        ):
+            try:
+                if control.page is not None:
+                    control.update()
+            except RuntimeError:
+                pass
+
     def cerrar_detalles_pedido(self, e):
-        self.detalles_activo_visible = False
-        self.seccion_pedido_activo.visible = False
-        self.btn_ver_pedido_activo.visible = True
-        self.seccion_historial.visible = True
-        self.seccion_pedido_activo.update()
-        self.btn_ver_pedido_activo.update()
-        self.seccion_historial.update()
+        self._alternar_visibilidad_activo(False)
 
     def mostrar_detalles_pedido(self, e):
-        self.detalles_activo_visible = True
-        self.seccion_pedido_activo.visible = True
-        self.btn_ver_pedido_activo.visible = False
-        self.seccion_historial.visible = False
-        self.seccion_pedido_activo.update()
-        self.btn_ver_pedido_activo.update()
-        self.seccion_historial.update()
+        self._alternar_visibilidad_activo(True)
 
     def tarjeta_pedido(self, id_pedido, fecha, total, estado):
         return ft.Container(

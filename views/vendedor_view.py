@@ -919,33 +919,34 @@ class VendedorView(ft.Column):
                     expand=True,
                     alignment=ft.Alignment.CENTER,
                     content=ft.Container(
-                        padding=ft.Padding(left=18, top=8, right=18, bottom=8),
-                        border_radius=24,
-                        bgcolor=ft.Colors.WHITE
-                        if seleccionado
-                        else ft.Colors.TRANSPARENT,
+                        padding=ft.Padding(left=14, top=6, right=14, bottom=6),
+                        border_radius=22,
+                        bgcolor="#F4C95D" if seleccionado else ft.Colors.TRANSPARENT,
                         content=ft.Column(
                             controls=[
                                 ft.Icon(
                                     icono_seleccionado
                                     if seleccionado
                                     else icono,
-                                    size=28 if seleccionado else 26,
-                                    color="#6A0404"
+                                    size=24 if seleccionado else 22,
+                                    color="#550707"
                                     if seleccionado
-                                    else "#FFE9DF",
+                                    else "#F5D5D5",
                                 ),
                                 ft.Text(
                                     etiqueta,
-                                    size=15 if seleccionado else 14,
-                                    color="#6A0404"
+                                    size=12 if seleccionado else 11,
+                                    color="#550707"
                                     if seleccionado
-                                    else "#FFE9DF",
+                                    else "#FFFFFF",
                                     weight=(
                                         ft.FontWeight.BOLD
                                         if seleccionado
                                         else ft.FontWeight.W_500
                                     ),
+                                    max_lines=1,
+                                    soft_wrap=False,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
                                 ),
                             ],
                             spacing=2,
@@ -1923,9 +1924,15 @@ class VendedorView(ft.Column):
             )
 
         return ft.Container(
-            padding=12,
-            bgcolor="#FFF8F2",
-            border_radius=12,
+            padding=14,
+            bgcolor=ft.Colors.WHITE,
+            border_radius=14,
+            border=ft.Border.all(1, "#F0D8CA"),
+            shadow=ft.BoxShadow(
+                blur_radius=10,
+                color=ft.Colors.with_opacity(0.05, ft.Colors.BLACK),
+                offset=ft.Offset(0, 3),
+            ),
             content=ft.Column(
                 spacing=5,
                 controls=[
